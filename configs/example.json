@@ -1,0 +1,7 @@
+{
+  "net": { "p2pPort": 18888, "p2pVersion": 11111, "maxConnections": 30 },
+  "http": { "enable": true, "port": 8090 },
+  "grpc": { "enable": true, "port": 50051 },
+  "jsonrpc": { "enable": false, "port": 8545 },
+  "storage": { "dir": "output-directory", "engine": "pebble" }
+}
