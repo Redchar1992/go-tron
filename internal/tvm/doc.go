@@ -31,10 +31,18 @@
 // multComplexity/adjExpLen/20 energy formula). Energy is byte-faithful to
 // PrecompiledContracts.java.
 //
-// NOT yet implemented: bn128 add/mul/pairing (0x06-0x08) + blake2F (0x20009) — need a
-// vetted alt_bn128 curve library; TRON batchValidateSign/validateMultiSign (0x09/0x0a)
-// and the shielded/voting/resource precompiles — need ABI-offset decoding and account-
-// permission state. These, plus TRC10 token transfer mechanics, full energy/resource
-// accounting (M3.3), hardfork gates (M3.4), and differential VM replay + fuzzing (M3.5),
-// remain. M3.0-M3.2 are verified by vector tests; the real-block energy oracle is M3.5.
+// M3.4 — hardfork/TIP gates: VMConfig carries the allowTvm* flags, each opcode introduced
+// by a fork has an `enabled(VMConfig)` predicate, and dispatch faults (invalid opcode) on
+// an op whose fork is not active. Gated: SHL/SHR/SAR + CREATE2 + EXTCODEHASH
+// (Constantinople), ISCONTRACT (Solidity059), CHAINID + SELFBALANCE (Istanbul), the TRC10
+// read ops (TransferTrc10). Presets: LatestVMConfig (all on) / ConstantinopleVMConfig /
+// the zero value (pre-everything). Mapping committee-proposal state -> these flags is the
+// node's job (M3.5/integration).
+//
+// NOT yet implemented: bn128 add/mul/pairing (0x06-0x08, incl. the Istanbul re-pricing
+// 500/40000 -> 150/6000) + blake2F (0x20009) — need a vetted alt_bn128 curve library;
+// TRON batchValidateSign/validateMultiSign (0x09/0x0a) and the shielded/voting/resource
+// precompiles — need ABI-offset decoding and account-permission state; TRC10 token
+// transfer mechanics. Remaining milestone: differential VM replay + fuzzing (M3.5).
+// M3.0-M3.4 are verified by vector tests; the real-block energy oracle is M3.5.
 package tvm

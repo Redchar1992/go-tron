@@ -36,6 +36,15 @@ type VMConfig struct {
 	// the available energy (java-tron's allowTvmCompatibleEvm && contractVersion==1 path).
 	// Off = original TRON behavior: the child may receive all available energy.
 	Forward6364 bool
+
+	// Hardfork/TIP gates (java-tron VMConfig.allowTvm*). An opcode introduced by a fork
+	// faults as an invalid opcode until its gate is enabled. Activation on a real network
+	// is committee-proposal driven; the node maps proposal state -> these flags.
+	AllowTransferTrc10  bool // CALLTOKEN, TOKENBALANCE, CALLTOKENVALUE, CALLTOKENID
+	AllowConstantinople bool // SHL, SHR, SAR, CREATE2, EXTCODEHASH
+	AllowSolidity059    bool // ISCONTRACT
+	AllowIstanbul       bool // CHAINID, SELFBALANCE
+	AllowLondon         bool // BASEFEE (not yet implemented)
 }
 
 // interpreter executes a single contract frame within an EVM.
@@ -70,7 +79,8 @@ func (in *interpreter) runFrame(sc *scope) *Result {
 	for !sc.stop && sc.pc < len(sc.contract.Code) {
 		op := OpCode(sc.contract.Code[sc.pc])
 		o := in.table[op]
-		if o == nil {
+		if o == nil || (o.enabled != nil && !o.enabled(in.cfg)) {
+			// Unknown opcode, or one whose introducing hardfork is not active yet.
 			return in.fail(ErrInvalidOpcode)
 		}
 		if sc.stack.Len() < o.pop {

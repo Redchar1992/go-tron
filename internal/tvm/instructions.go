@@ -20,14 +20,16 @@ const (
 )
 
 // operation is one entry in the jump table: its executor, its energy-cost function, and
-// its stack effect. halts ends the frame; jumps means exec sets pc itself.
+// its stack effect. halts ends the frame; jumps means exec sets pc itself. enabled (when
+// non-nil) gates the op on a hardfork flag — a disabled op faults as an invalid opcode.
 type operation struct {
-	exec  func(in *interpreter, sc *scope) error
-	gas   func(in *interpreter, sc *scope) (uint64, error)
-	pop   int
-	push  int
-	halts bool
-	jumps bool
+	exec    func(in *interpreter, sc *scope) error
+	gas     func(in *interpreter, sc *scope) (uint64, error)
+	pop     int
+	push    int
+	halts   bool
+	jumps   bool
+	enabled func(VMConfig) bool
 }
 
 // constGas returns a cost function for a fixed-cost op.
@@ -161,6 +163,22 @@ func buildTable() {
 	t[RETURN] = &operation{exec: opReturn, gas: gasReturn, pop: 2, halts: true}
 	t[REVERT] = &operation{exec: opRevert, gas: gasReturn, pop: 2, halts: true}
 	t[INVALID] = &operation{exec: opInvalid, gas: constGas(gasZero)}
+
+	// Hardfork/TIP gates: each opcode below faults as invalid until its flag is set.
+	gate := func(op OpCode, fn func(VMConfig) bool) { t[op].enabled = fn }
+	constantinople := func(c VMConfig) bool { return c.AllowConstantinople }
+	gate(SHL, constantinople)
+	gate(SHR, constantinople)
+	gate(SAR, constantinople)
+	gate(CREATE2, constantinople)
+	gate(EXTCODEHASH, constantinople)
+	gate(ISCONTRACT, func(c VMConfig) bool { return c.AllowSolidity059 })
+	gate(CHAINID, func(c VMConfig) bool { return c.AllowIstanbul })
+	gate(SELFBALANCE, func(c VMConfig) bool { return c.AllowIstanbul })
+	transferTrc10 := func(c VMConfig) bool { return c.AllowTransferTrc10 }
+	gate(TOKENBALANCE, transferTrc10)
+	gate(CALLTOKENVALUE, transferTrc10)
+	gate(CALLTOKENID, transferTrc10)
 
 	builtTable = t
 }
