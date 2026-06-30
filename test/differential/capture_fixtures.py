@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Capture real TRON mainnet blocks from TronGrid into differential-replay fixtures.
+
+The replay harness (replay_test.go) is the M2 oracle: it reconstructs each block from
+these fixtures and asserts its recomputed block id + txTrieRoot equal the on-chain
+values. We commit the fixtures so the test runs offline; re-run this only to refresh.
+
+Outputs (test/differential/testdata/):
+  chain.json  - a contiguous run from genesis (block 0..CHAIN_END), replayed through the
+                Manager: proves block-id over real headers, empty-block ZERO txTrieRoot,
+                parent linkage, and the linear pipeline.
+  spot.json   - individual transaction-bearing blocks, verified for ROOT equivalence only
+                (multi-tx Merkle over real TransferContract/VoteWitnessContract bytes).
+
+Usage:  python3 capture_fixtures.py
+"""
+
+import json
+import os
+import subprocess
+
+TRONGRID = "https://api.trongrid.io/wallet/getblockbynum"
+CHAIN_END = 20            # contiguous blocks 0..CHAIN_END
+SPOT_BLOCKS = [1000000, 2000000]  # tx-bearing blocks (no smart contracts in these)
+TESTDATA = os.path.join(os.path.dirname(__file__), "testdata")
+
+
+def fetch(num):
+    # Shell out to curl: this machine's Python SSL trust store is incomplete.
+    out = subprocess.check_output([
+        "curl", "-sS", "--max-time", "20",
+        "-X", "POST", TRONGRID,
+        "-H", "Content-Type: application/json",
+        "-d", json.dumps({"num": num}),
+    ])
+    return json.loads(out)
+
+
+def to_fixture(b):
+    h = b["block_header"]["raw_data"]
+    txs = []
+    for tx in b.get("transactions", []):
+        txs.append({
+            "rawDataHex": tx["raw_data_hex"],
+            "signatures": tx.get("signature", []),
+        })
+    return {
+        "number": h.get("number", 0),
+        "blockID": b["blockID"],
+        "timestamp": h.get("timestamp", 0),
+        "parentHash": h.get("parentHash", ""),
+        "txTrieRoot": h.get("txTrieRoot", ""),
+        "witnessAddress": h.get("witness_address", ""),
+        "witnessId": h.get("witness_id", 0),
+        "version": h.get("version", 0),
+        "accountStateRoot": h.get("accountStateRoot", ""),
+        "transactions": txs,
+    }
+
+
+def main():
+    os.makedirs(TESTDATA, exist_ok=True)
+
+    chain = [to_fixture(fetch(n)) for n in range(0, CHAIN_END + 1)]
+    with open(os.path.join(TESTDATA, "chain.json"), "w") as f:
+        json.dump({"blocks": chain}, f, indent=2)
+    print(f"wrote chain.json: blocks 0..{CHAIN_END} "
+          f"({sum(len(b['transactions']) for b in chain)} txs total)")
+
+    spot = [to_fixture(fetch(n)) for n in SPOT_BLOCKS]
+    with open(os.path.join(TESTDATA, "spot.json"), "w") as f:
+        json.dump({"blocks": spot}, f, indent=2)
+    print("wrote spot.json:", ", ".join(
+        f"#{b['number']} ({len(b['transactions'])} txs)" for b in spot))
+
+
+if __name__ == "__main__":
+    main()

@@ -15,17 +15,14 @@
 package genesis
 
 import (
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"strings"
 
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/Redchar1992/go-tron/internal/address"
-	"github.com/Redchar1992/go-tron/internal/crypto"
-	"github.com/Redchar1992/go-tron/internal/merkle"
+	"github.com/Redchar1992/go-tron/internal/block"
 	core "github.com/Redchar1992/go-tron/internal/proto/core"
 	"github.com/Redchar1992/go-tron/internal/state"
 )
@@ -87,11 +84,7 @@ func NewGenesisTransaction(to []byte, amount int64) (*core.Transaction, error) {
 
 // TxMerkleHash returns SHA-256 of the FULL serialized transaction (java-tron getMerkleHash).
 func TxMerkleHash(tx *core.Transaction) ([]byte, error) {
-	b, err := proto.Marshal(tx)
-	if err != nil {
-		return nil, err
-	}
-	return crypto.Sha256(b), nil
+	return block.TxMerkleHash(tx)
 }
 
 // Transactions builds the ordered genesis transactions from the asset allocations.
@@ -113,15 +106,7 @@ func (c *Config) Transactions() ([]*core.Transaction, error) {
 
 // TxTrieRootOf computes the transaction Merkle root over the given transactions.
 func TxTrieRootOf(txs []*core.Transaction) ([]byte, error) {
-	leaves := make([][]byte, len(txs))
-	for i, tx := range txs {
-		h, err := TxMerkleHash(tx)
-		if err != nil {
-			return nil, err
-		}
-		leaves[i] = h
-	}
-	return merkle.Root(leaves), nil
+	return block.CalcTxTrieRoot(txs)
 }
 
 // TxTrieRoot computes the genesis transaction Merkle root.
@@ -153,25 +138,33 @@ func (c *Config) HeaderRaw() (*core.BlockHeaderRaw, error) {
 	}, nil
 }
 
-// HeaderHash returns the raw SHA-256 of the serialized BlockHeader.raw.
-func HeaderHash(raw *core.BlockHeaderRaw) ([]byte, error) {
-	b, err := proto.Marshal(raw)
+// Block assembles the full genesis core.Block (header + ordered genesis transactions)
+// — the root the Manager seeds KhaosDB with and replay starts from.
+func (c *Config) Block() (*core.Block, error) {
+	raw, err := c.HeaderRaw()
 	if err != nil {
 		return nil, err
 	}
-	return crypto.Sha256(b), nil
+	txs, err := c.Transactions()
+	if err != nil {
+		return nil, err
+	}
+	return &core.Block{
+		BlockHeader:  &core.BlockHeader{RawData: raw},
+		Transactions: txs,
+	}, nil
+}
+
+// HeaderHash returns the raw SHA-256 of the serialized BlockHeader.raw.
+func HeaderHash(raw *core.BlockHeaderRaw) ([]byte, error) {
+	return block.HeaderRawHash(raw)
 }
 
 // BlockID returns the canonical TRON block id for a header: SHA-256 of the serialized
 // BlockHeader.raw, with the first 8 bytes overwritten by the block number (big-endian).
 // This matches java-tron's Sha256Hash.generateBlockId / BlockCapsule.getBlockId.
 func BlockID(raw *core.BlockHeaderRaw) ([]byte, error) {
-	h, err := HeaderHash(raw)
-	if err != nil {
-		return nil, err
-	}
-	binary.BigEndian.PutUint64(h[0:8], uint64(raw.GetNumber()))
-	return h, nil
+	return block.IDFromHeaderRaw(raw)
 }
 
 // BlockID returns the genesis block id.
