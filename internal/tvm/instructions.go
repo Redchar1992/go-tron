@@ -97,6 +97,14 @@ func buildTable() {
 	reg(CODECOPY, opCodecopy, gasCopy, 3, 0)
 	reg(GASPRICE, opGasprice, constGas(gasBase), 0, 1)
 	reg(RETURNDATASIZE, opReturndatasize, constGas(gasBase), 0, 1)
+	reg(RETURNDATACOPY, opReturndatacopy, gasReturndatacopy, 3, 0)
+
+	// account access (cross-contract state).
+	reg(BALANCE, opBalance, constGas(20), 1, 1)
+	reg(EXTCODESIZE, opExtcodesize, constGas(20), 1, 1)
+	reg(EXTCODEHASH, opExtcodehash, constGas(400), 1, 1)
+	reg(EXTCODECOPY, opExtcodecopy, gasExtcodecopy, 4, 0)
+	reg(SELFBALANCE, opSelfbalance, constGas(gasLow), 0, 1)
 
 	// 0x40 — block context.
 	reg(COINBASE, opCoinbase, constGas(gasBase), 0, 1)
@@ -137,7 +145,19 @@ func buildTable() {
 		t[op] = &operation{exec: makeSwap(n), gas: constGas(gasVeryLow), pop: n + 1, push: n + 1}
 	}
 
-	// 0xf0 — halts.
+	// 0xd0 — TRON token (TRC10) ops (M3.1: read-side plumbing; CALLTOKEN deferred to M3.3).
+	reg(TOKENBALANCE, opTokenbalance, constGas(20), 2, 1)
+	reg(CALLTOKENVALUE, opCalltokenvalue, constGas(gasBase), 0, 1)
+	reg(CALLTOKENID, opCalltokenid, constGas(gasBase), 0, 1)
+	reg(ISCONTRACT, opIscontract, constGas(gasBase), 1, 1)
+
+	// 0xf0 — call frames, create, halts.
+	t[CREATE] = &operation{exec: opCreate, gas: gasCreate, pop: 3, push: 1}
+	t[CREATE2] = &operation{exec: opCreate2, gas: gasCreate2, pop: 4, push: 1}
+	t[CALL] = &operation{exec: opCall, gas: gasCall, pop: 7, push: 1}
+	t[CALLCODE] = &operation{exec: opCallcode, gas: gasCallcode, pop: 7, push: 1}
+	t[DELEGATECALL] = &operation{exec: opDelegatecall, gas: gasCallNoValue, pop: 6, push: 1}
+	t[STATICCALL] = &operation{exec: opStaticcall, gas: gasCallNoValue, pop: 6, push: 1}
 	t[RETURN] = &operation{exec: opReturn, gas: gasReturn, pop: 2, halts: true}
 	t[REVERT] = &operation{exec: opRevert, gas: gasReturn, pop: 2, halts: true}
 	t[INVALID] = &operation{exec: opInvalid, gas: constGas(gasZero)}
@@ -489,16 +509,19 @@ func opMstore8(in *interpreter, sc *scope) error {
 }
 
 func opSload(in *interpreter, sc *scope) error {
-	key := sc.stack.peek(0)
-	v, _ := sc.contract.Storage.Load(key.Bytes32())
-	key.SetBytes(v[:])
+	slot := sc.stack.peek(0)
+	v, _ := in.evm.state.GetStorage(sc.contract.Self, slot.Bytes32())
+	slot.SetBytes(v[:])
 	return nil
 }
 
 func opSstore(in *interpreter, sc *scope) error {
-	key, _ := sc.stack.pop()
+	if in.readOnly {
+		return ErrStaticStateChange
+	}
+	slot, _ := sc.stack.pop()
 	val, _ := sc.stack.pop()
-	sc.contract.Storage.Store(key.Bytes32(), val.Bytes32())
+	in.evm.state.SetStorage(sc.contract.Self, slot.Bytes32(), val.Bytes32())
 	return nil
 }
 
@@ -592,6 +615,153 @@ func opRevert(in *interpreter, sc *scope) error {
 }
 
 func opInvalid(in *interpreter, sc *scope) error { return ErrInvalidOpcode }
+
+// ---- account access (M3.1: cross-contract state) ----
+
+func opBalance(in *interpreter, sc *scope) error {
+	a := sc.stack.peek(0)
+	a.Set(in.evm.state.GetBalance(wordToAddr(a)))
+	return nil
+}
+
+func opSelfbalance(in *interpreter, sc *scope) error {
+	return sc.stack.push(*in.evm.state.GetBalance(sc.contract.Self))
+}
+
+func opExtcodesize(in *interpreter, sc *scope) error {
+	a := sc.stack.peek(0)
+	a.SetUint64(uint64(in.evm.state.GetCodeSize(wordToAddr(a))))
+	return nil
+}
+
+func opExtcodehash(in *interpreter, sc *scope) error {
+	a := sc.stack.peek(0)
+	if !in.evm.state.Exist(wordToAddr(a)) {
+		a.Clear()
+		return nil
+	}
+	h := in.evm.state.GetCodeHash(wordToAddr(a))
+	a.SetBytes(h[:])
+	return nil
+}
+
+func opExtcodecopy(in *interpreter, sc *scope) error {
+	addr, _ := sc.stack.pop()
+	memOff, _ := sc.stack.pop()
+	codeOff, _ := sc.stack.pop()
+	length, _ := sc.stack.pop()
+	code := in.evm.state.GetCode(wordToAddr(&addr))
+	out := make([]byte, length.Uint64())
+	copyDataAt(out, code, clampU64(codeOff), length.Uint64())
+	sc.mem.set(memOff.Uint64(), out)
+	return nil
+}
+
+func opIscontract(in *interpreter, sc *scope) error {
+	a := sc.stack.peek(0)
+	setBool(a, in.evm.state.GetCodeSize(wordToAddr(a)) > 0)
+	return nil
+}
+
+// ---- return data ----
+
+func opReturndatacopy(in *interpreter, sc *scope) error {
+	memOff, _ := sc.stack.pop()
+	dataOff, _ := sc.stack.pop()
+	length, _ := sc.stack.pop()
+	end, err := memAccessSize(&dataOff, &length)
+	if err != nil {
+		return err
+	}
+	if end > uint64(len(sc.returnData)) {
+		return ErrReturnDataOutOfBounds
+	}
+	out := make([]byte, length.Uint64())
+	copyDataAt(out, sc.returnData, dataOff.Uint64(), length.Uint64())
+	sc.mem.set(memOff.Uint64(), out)
+	return nil
+}
+
+// ---- TRC10 token plumbing (M3.1: structure only; token transfer is M3.3) ----
+
+func opCalltokenvalue(in *interpreter, sc *scope) error { return sc.stack.push(uint256.Int{}) }
+func opCalltokenid(in *interpreter, sc *scope) error    { return sc.stack.push(uint256.Int{}) }
+
+func opTokenbalance(in *interpreter, sc *scope) error {
+	// pops address, tokenId; TRC10 asset balances are not modeled until M3.3 -> 0.
+	sc.stack.pop()
+	id := sc.stack.peek(0)
+	id.Clear()
+	return nil
+}
+
+// ---- CALL family ----
+
+func opCall(in *interpreter, sc *scope) error {
+	gasW, _ := sc.stack.pop()
+	addrW, _ := sc.stack.pop()
+	value, _ := sc.stack.pop()
+	inOff, _ := sc.stack.pop()
+	inSize, _ := sc.stack.pop()
+	outOff, _ := sc.stack.pop()
+	outSize, _ := sc.stack.pop()
+	args := sc.mem.get(inOff.Uint64(), inSize.Uint64())
+	return in.evm.doCall(in, sc, kindCall, wordToAddr(&addrW), &value, clampU64(gasW), args, outOff.Uint64(), outSize.Uint64())
+}
+
+func opCallcode(in *interpreter, sc *scope) error {
+	gasW, _ := sc.stack.pop()
+	addrW, _ := sc.stack.pop()
+	value, _ := sc.stack.pop()
+	inOff, _ := sc.stack.pop()
+	inSize, _ := sc.stack.pop()
+	outOff, _ := sc.stack.pop()
+	outSize, _ := sc.stack.pop()
+	args := sc.mem.get(inOff.Uint64(), inSize.Uint64())
+	return in.evm.doCall(in, sc, kindCallCode, wordToAddr(&addrW), &value, clampU64(gasW), args, outOff.Uint64(), outSize.Uint64())
+}
+
+func opDelegatecall(in *interpreter, sc *scope) error {
+	gasW, _ := sc.stack.pop()
+	addrW, _ := sc.stack.pop()
+	inOff, _ := sc.stack.pop()
+	inSize, _ := sc.stack.pop()
+	outOff, _ := sc.stack.pop()
+	outSize, _ := sc.stack.pop()
+	args := sc.mem.get(inOff.Uint64(), inSize.Uint64())
+	return in.evm.doCall(in, sc, kindDelegate, wordToAddr(&addrW), nil, clampU64(gasW), args, outOff.Uint64(), outSize.Uint64())
+}
+
+func opStaticcall(in *interpreter, sc *scope) error {
+	gasW, _ := sc.stack.pop()
+	addrW, _ := sc.stack.pop()
+	inOff, _ := sc.stack.pop()
+	inSize, _ := sc.stack.pop()
+	outOff, _ := sc.stack.pop()
+	outSize, _ := sc.stack.pop()
+	args := sc.mem.get(inOff.Uint64(), inSize.Uint64())
+	return in.evm.doCall(in, sc, kindStatic, wordToAddr(&addrW), nil, clampU64(gasW), args, outOff.Uint64(), outSize.Uint64())
+}
+
+// ---- CREATE ----
+
+func opCreate(in *interpreter, sc *scope) error {
+	value, _ := sc.stack.pop()
+	inOff, _ := sc.stack.pop()
+	inSize, _ := sc.stack.pop()
+	initCode := sc.mem.get(inOff.Uint64(), inSize.Uint64())
+	return in.evm.doCreate(in, sc, &value, initCode, nil, false)
+}
+
+func opCreate2(in *interpreter, sc *scope) error {
+	value, _ := sc.stack.pop()
+	inOff, _ := sc.stack.pop()
+	inSize, _ := sc.stack.pop()
+	salt, _ := sc.stack.pop()
+	initCode := sc.mem.get(inOff.Uint64(), inSize.Uint64())
+	saltB := salt.Bytes32()
+	return in.evm.doCreate(in, sc, &value, initCode, saltB[:], true)
+}
 
 // copyDataAt copies into dst (already sized) `length` bytes of src starting at srcOff,
 // zero-filling past the end of src — the EVM CALLDATACOPY/CODECOPY/CALLDATALOAD rule.

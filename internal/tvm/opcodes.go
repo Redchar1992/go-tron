@@ -95,8 +95,21 @@ const (
 	SWAP1  OpCode = 0x90
 	SWAP16 OpCode = 0x9f
 
-	// 0xf0 range — halts (full call/create semantics land in M3.1).
+	// 0xd0 range — TRON token (TRC10) operations.
+	CALLTOKEN      OpCode = 0xd0
+	TOKENBALANCE   OpCode = 0xd1
+	CALLTOKENVALUE OpCode = 0xd2
+	CALLTOKENID    OpCode = 0xd3
+	ISCONTRACT     OpCode = 0xd4
+
+	// 0xf0 range — call frames, create, and halts.
+	CREATE       OpCode = 0xf0
+	CALL         OpCode = 0xf1
+	CALLCODE     OpCode = 0xf2
 	RETURN       OpCode = 0xf3
+	DELEGATECALL OpCode = 0xf4
+	CREATE2      OpCode = 0xf5
+	STATICCALL   OpCode = 0xfa
 	REVERT       OpCode = 0xfd
 	INVALID      OpCode = 0xfe
 	SELFDESTRUCT OpCode = 0xff

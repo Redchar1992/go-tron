@@ -16,6 +16,10 @@ var (
 	ErrMemoryOverflow = errors.New("tvm: memory overflow")
 	// ErrGasUintOverflow is returned when a memory offset/size does not fit in uint64.
 	ErrGasUintOverflow = errors.New("tvm: gas uint64 overflow")
+	// ErrStaticStateChange is returned when a state-mutating op runs in a STATICCALL.
+	ErrStaticStateChange = errors.New("tvm: state change in static context")
+	// ErrReturnDataOutOfBounds is returned when RETURNDATACOPY reads past the buffer.
+	ErrReturnDataOutOfBounds = errors.New("tvm: return data out of bounds")
 )
 
 // memLimit is java-tron's 3 MB cap on a single execution's memory (EnergyCost MEM_LIMIT).
@@ -28,15 +32,21 @@ type VMConfig struct {
 	// LegacyMemCost, when true, uses the original MLOAD/MSTORE cost (no SPECIAL_TIER
 	// surcharge) — the pre-allowHigherLimitForMaxCpuTimeOfOneTx behavior.
 	LegacyMemCost bool
+	// Forward6364, when true, caps the energy passed to a child CALL/CREATE at 63/64 of
+	// the available energy (java-tron's allowTvmCompatibleEvm && contractVersion==1 path).
+	// Off = original TRON behavior: the child may receive all available energy.
+	Forward6364 bool
 }
 
-// interpreter executes a single contract frame.
+// interpreter executes a single contract frame within an EVM.
 type interpreter struct {
-	cfg   VMConfig
-	block BlockContext
-	meter *energyMeter
-	table *[256]*operation
-	dests []bool // valid JUMPDEST bitmap for the current code
+	evm      *EVM
+	cfg      VMConfig
+	block    BlockContext
+	meter    *energyMeter
+	table    *[256]*operation
+	dests    []bool // valid JUMPDEST bitmap for the current code
+	readOnly bool   // STATICCALL context: state-mutating ops fault
 }
 
 // scope is the mutable per-frame execution state.
@@ -48,25 +58,17 @@ type scope struct {
 	stop       bool
 	ret        []byte
 	reverted   bool
-	returnData []byte // RETURNDATA buffer; empty in M3.0 (no nested calls)
+	returnData []byte // last nested call's RETURN/REVERT payload (RETURNDATASIZE/COPY)
 }
 
-// Run executes contract under energyLimit with the given block context and returns the
-// result. REVERT is reported via Result.Reverted (not Err); a VM exception sets Err and
-// consumes all energy (java-tron semantics), except REVERT which refunds the remainder.
-func Run(contract *Contract, input []byte, energyLimit uint64, block BlockContext, cfg VMConfig) *Result {
-	contract.Input = input
-	in := &interpreter{
-		cfg:   cfg,
-		block: block,
-		meter: newEnergyMeter(energyLimit),
-		table: opTable(),
-	}
-	sc := &scope{contract: contract, stack: newStack(), mem: newMemory()}
-	in.dests = analyzeJumpDests(contract.Code)
+// runFrame executes a single frame to completion and returns its result. REVERT is
+// reported via Result.Reverted (not Err); a VM exception sets Err and consumes all
+// energy (java-tron semantics), except REVERT which refunds the remainder.
+func (in *interpreter) runFrame(sc *scope) *Result {
+	in.dests = analyzeJumpDests(sc.contract.Code)
 
-	for !sc.stop && sc.pc < len(contract.Code) {
-		op := OpCode(contract.Code[sc.pc])
+	for !sc.stop && sc.pc < len(sc.contract.Code) {
+		op := OpCode(sc.contract.Code[sc.pc])
 		o := in.table[op]
 		if o == nil {
 			return in.fail(ErrInvalidOpcode)

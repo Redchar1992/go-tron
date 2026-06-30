@@ -10,17 +10,30 @@ import (
 	"github.com/Redchar1992/go-tron/internal/crypto"
 )
 
+// addr builds a 21-byte TRON address (0x41 prefix) ending in b, for tests.
+func addr(b byte) []byte {
+	a := make([]byte, 21)
+	a[0] = 0x41
+	a[20] = b
+	return a
+}
+
+// runOn executes code at address self over the given state, returning the result.
+func runOn(state *MemStateDB, self, code, input []byte, limit uint64) *Result {
+	c := &Contract{
+		Self: self, CodeAddr: self, Caller: addr(0x02), Origin: addr(0x02),
+		Value: new(uint256.Int), Code: code,
+	}
+	evm := NewEVM(state, BlockContext{ChainID: uint256From(728126428)}, VMConfig{})
+	return evm.Execute(c, input, limit)
+}
+
 // run executes code in a fresh frame with the given energy limit and default context.
 func run(code []byte, limit uint64) *Result {
-	c := &Contract{
-		Self:    make([]byte, 20),
-		Caller:  make([]byte, 20),
-		Origin:  make([]byte, 20),
-		Value:   new(uint256.Int),
-		Storage: NewMemStorage(),
-		Code:    code,
-	}
-	return Run(c, nil, limit, BlockContext{ChainID: uint256From(728126428)}, VMConfig{})
+	s := NewMemStateDB()
+	self := addr(0x01)
+	s.SetCode(self, code)
+	return runOn(s, self, code, nil, limit)
 }
 
 // wordTail returns the last byte of a 32-byte return word.
@@ -56,11 +69,10 @@ func TestArithmeticAndEnergy(t *testing.T) {
 //	energy = 3+3 + 20000 + 3 + 50 + 3 + 4 + 3 + 3 + 0 = 20072
 func TestStorageSetEnergy(t *testing.T) {
 	code := []byte{0x60, 42, 0x60, 1, 0x55, 0x60, 1, 0x54, 0x60, 0, 0x52, 0x60, 32, 0x60, 0, 0xf3}
-	c := &Contract{
-		Self: make([]byte, 20), Caller: make([]byte, 20), Origin: make([]byte, 20),
-		Value: new(uint256.Int), Storage: NewMemStorage(), Code: code,
-	}
-	r := Run(c, nil, 100000, BlockContext{}, VMConfig{})
+	s := NewMemStateDB()
+	self := addr(0x01)
+	s.SetCode(self, code)
+	r := runOn(s, self, code, nil, 100000)
 	if r.Err != nil {
 		t.Fatalf("err = %v", r.Err)
 	}
@@ -73,7 +85,7 @@ func TestStorageSetEnergy(t *testing.T) {
 	// And the slot persisted.
 	var key [32]byte
 	key[31] = 1
-	v, present := c.Storage.Load(key)
+	v, present := s.GetStorage(self, key)
 	if !present || v[31] != 42 {
 		t.Fatalf("storage[1] = %x present=%v, want 42", v, present)
 	}

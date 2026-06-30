@@ -32,5 +32,15 @@ func (m *energyMeter) spend(cost uint64) error {
 // remaining returns the energy left in the budget.
 func (m *energyMeter) remaining() uint64 { return m.limit - m.used }
 
+// restore returns n energy to the budget (used when a child call/create leaves energy
+// unspent). Clamped so used never underflows.
+func (m *energyMeter) restore(n uint64) {
+	if n > m.used {
+		m.used = 0
+		return
+	}
+	m.used -= n
+}
+
 // addRefund accumulates refund energy (SSTORE clearing). Applied, capped, at the end.
 func (m *energyMeter) addRefund(v uint64) { m.refund += v }
