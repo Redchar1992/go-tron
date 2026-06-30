@@ -1,0 +1,31 @@
+# --- internal docs (not published) ---
+docs/
+
+# --- Go ---
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+/build/
+/dist/
+vendor/
+go.work
+go.work.sum
+
+# --- node data / runtime ---
+/output-directory/
+/logs/
+*.log
+/data/
+*.db
+/output/
+
+# --- editor / OS ---
+.idea/
+.vscode/
+.DS_Store
+*.swp
