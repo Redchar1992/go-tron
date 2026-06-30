@@ -15,6 +15,7 @@
 package genesis
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -110,19 +111,26 @@ func (c *Config) Transactions() ([]*core.Transaction, error) {
 	return txs, nil
 }
 
+// TxTrieRootOf computes the transaction Merkle root over the given transactions.
+func TxTrieRootOf(txs []*core.Transaction) ([]byte, error) {
+	leaves := make([][]byte, len(txs))
+	for i, tx := range txs {
+		h, err := TxMerkleHash(tx)
+		if err != nil {
+			return nil, err
+		}
+		leaves[i] = h
+	}
+	return merkle.Root(leaves), nil
+}
+
 // TxTrieRoot computes the genesis transaction Merkle root.
 func (c *Config) TxTrieRoot() ([]byte, error) {
 	txs, err := c.Transactions()
 	if err != nil {
 		return nil, err
 	}
-	leaves := make([][]byte, len(txs))
-	for i, tx := range txs {
-		if leaves[i], err = TxMerkleHash(tx); err != nil {
-			return nil, err
-		}
-	}
-	return merkle.Root(leaves), nil
+	return TxTrieRootOf(txs)
 }
 
 // HeaderRaw builds the genesis BlockHeader.raw with the fields java-tron populates
@@ -145,17 +153,34 @@ func (c *Config) HeaderRaw() (*core.BlockHeaderRaw, error) {
 	}, nil
 }
 
-// BlockID returns the genesis block id = SHA-256 of the serialized BlockHeader.raw.
-func (c *Config) BlockID() ([]byte, error) {
-	raw, err := c.HeaderRaw()
-	if err != nil {
-		return nil, err
-	}
+// HeaderHash returns the raw SHA-256 of the serialized BlockHeader.raw.
+func HeaderHash(raw *core.BlockHeaderRaw) ([]byte, error) {
 	b, err := proto.Marshal(raw)
 	if err != nil {
 		return nil, err
 	}
 	return crypto.Sha256(b), nil
+}
+
+// BlockID returns the canonical TRON block id for a header: SHA-256 of the serialized
+// BlockHeader.raw, with the first 8 bytes overwritten by the block number (big-endian).
+// This matches java-tron's Sha256Hash.generateBlockId / BlockCapsule.getBlockId.
+func BlockID(raw *core.BlockHeaderRaw) ([]byte, error) {
+	h, err := HeaderHash(raw)
+	if err != nil {
+		return nil, err
+	}
+	binary.BigEndian.PutUint64(h[0:8], uint64(raw.GetNumber()))
+	return h, nil
+}
+
+// BlockID returns the genesis block id.
+func (c *Config) BlockID() ([]byte, error) {
+	raw, err := c.HeaderRaw()
+	if err != nil {
+		return nil, err
+	}
+	return BlockID(raw)
 }
 
 // Load writes the initial accounts and witnesses into state. (Account fields beyond

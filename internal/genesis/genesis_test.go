@@ -3,6 +3,8 @@ package genesis
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/Redchar1992/go-tron/internal/address"
@@ -107,11 +109,77 @@ func TestLoadState(t *testing.T) {
 	}
 }
 
-// TestMainnetGenesisHash is the real M1 exit criterion: our computed genesis block id
-// must equal the known TRON mainnet block-0 hash. It needs the mainnet genesis config
-// (tron-deployment/main_net_config.conf) and the canonical block-0 hash. Deferred until
-// those are wired in.
+// mainnetFixture is the canonical TRON mainnet block-0, captured from TronGrid
+// (getblockbynum num=0) into testdata/mainnet_genesis.json.
+type mainnetFixture struct {
+	BlockID    string `json:"blockID"`
+	TxTrieRoot string `json:"txTrieRoot"`
+	ParentHash string `json:"parentHash"`
+	WitnessHex string `json:"witnessHex"`
+	Timestamp  int64  `json:"timestamp"`
+	Number     int64  `json:"number"`
+	Txs        []struct {
+		To     string `json:"to"`
+		Amount int64  `json:"amount"`
+	} `json:"txs"`
+}
+
+// TestMainnetGenesisHash is the M1 exit criterion: rebuilding the real TRON mainnet
+// genesis from its transactions must reproduce the canonical block-0 txTrieRoot AND
+// block id, byte-for-byte.
 func TestMainnetGenesisHash(t *testing.T) {
-	t.Skip("M1 exit: needs main_net_config.conf genesis values + canonical block-0 hash")
-	_ = hex.EncodeToString
+	raw, err := os.ReadFile("testdata/mainnet_genesis.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f mainnetFixture
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sanity: our genesis witness note matches the on-chain witness_address bytes.
+	if got := hex.EncodeToString([]byte(WitnessNote)); got != f.WitnessHex {
+		t.Fatalf("witness note hex mismatch:\n got  %s\n want %s", got, f.WitnessHex)
+	}
+
+	// Rebuild the genesis transactions in order and check txTrieRoot.
+	txs := make([]*core.Transaction, 0, len(f.Txs))
+	for i, r := range f.Txs {
+		to, err := hex.DecodeString(r.To)
+		if err != nil {
+			t.Fatalf("tx %d to: %v", i, err)
+		}
+		tx, err := NewGenesisTransaction(to, r.Amount)
+		if err != nil {
+			t.Fatalf("tx %d: %v", i, err)
+		}
+		txs = append(txs, tx)
+	}
+	root, err := TxTrieRootOf(txs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(root); got != f.TxTrieRoot {
+		t.Fatalf("txTrieRoot mismatch:\n got  %s\n want %s", got, f.TxTrieRoot)
+	}
+
+	// Build the genesis header and check the block id.
+	parent, err := hex.DecodeString(f.ParentHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := &core.BlockHeaderRaw{
+		Timestamp:      f.Timestamp,
+		ParentHash:     parent,
+		Number:         f.Number,
+		TxTrieRoot:     root,
+		WitnessAddress: []byte(WitnessNote),
+	}
+	id, err := BlockID(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(id); got != f.BlockID {
+		t.Fatalf("genesis block id mismatch:\n got  %s\n want %s", got, f.BlockID)
+	}
 }
