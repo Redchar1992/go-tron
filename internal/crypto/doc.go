@@ -1,5 +1,7 @@
-// Package crypto provides secp256k1 sign/recover and the hash primitives TRON uses.
+// Package crypto provides the hash and signature primitives TRON uses.
 //
-// Plan: reuse gotron-sdk's client-grade crypto (pinned). CONSENSUS-CRITICAL: signature
-// recovery and hashing must match java-tron exactly. M0: placeholder.
+// We implement the minimal set on top of lightweight deps (golang.org/x/crypto/sha3 for
+// Keccak-256) rather than pulling all of go-ethereum. secp256k1 sign/recover (via
+// btcec/v2) will be added when transaction signing lands (actuator path).
+// CONSENSUS-CRITICAL: hashing/recovery must match java-tron exactly.
 package crypto
