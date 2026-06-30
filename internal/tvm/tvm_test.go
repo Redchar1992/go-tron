@@ -10,10 +10,12 @@ import (
 	"github.com/Redchar1992/go-tron/internal/crypto"
 )
 
-// addr builds a 21-byte TRON address (0x41 prefix) ending in b, for tests.
+// addr builds a 21-byte TRON address (0x41 prefix) ending in b, for tests. The 0xC0 byte
+// keeps test addresses clear of the low-numbered precompile addresses (0x01..0x05).
 func addr(b byte) []byte {
 	a := make([]byte, 21)
 	a[0] = 0x41
+	a[1] = 0xC0
 	a[20] = b
 	return a
 }

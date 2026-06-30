@@ -23,8 +23,18 @@
 // EXTCODECOPY/EXTCODEHASH/SELFBALANCE), STATICCALL write-protection, and read-side TRC10
 // token opcode plumbing.
 //
-// NOT yet implemented: TRC10 token transfer mechanics + precompiles (M3.2), full
-// energy/resource accounting vs receipts (M3.3), hardfork/TIP gates (M3.4), differential
-// VM replay of contract-bearing mainnet blocks + fuzzing (M3.5). M3.1 is verified by
-// vector tests (no real-block oracle yet — that needs historical contract state, M3.5).
+// M3.2 — precompiles: a precompile registry + CALL dispatch (run natively, charge the
+// precompile's energy, fail-to-0 on error). Implemented and vector-tested: ecrecover
+// (0x01, secp256k1 recovery -> 20-byte Ethereum address), sha256 (0x02), TRON's 0x03
+// (sha256(sha256(x)[:20]) — a deliberate deviation; the real RIPEMD-160 is at 0x20003),
+// identity (0x04), modexp (0x05, with TRON's zero-modulus -> empty rule and the
+// multComplexity/adjExpLen/20 energy formula). Energy is byte-faithful to
+// PrecompiledContracts.java.
+//
+// NOT yet implemented: bn128 add/mul/pairing (0x06-0x08) + blake2F (0x20009) — need a
+// vetted alt_bn128 curve library; TRON batchValidateSign/validateMultiSign (0x09/0x0a)
+// and the shielded/voting/resource precompiles — need ABI-offset decoding and account-
+// permission state. These, plus TRC10 token transfer mechanics, full energy/resource
+// accounting (M3.3), hardfork gates (M3.4), and differential VM replay + fuzzing (M3.5),
+// remain. M3.0-M3.2 are verified by vector tests; the real-block energy oracle is M3.5.
 package tvm

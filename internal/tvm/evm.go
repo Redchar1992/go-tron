@@ -122,6 +122,20 @@ func (evm *EVM) doCall(in *interpreter, sc *scope, kind callKind, to []byte,
 		evm.state.AddBalance(to, value)
 	}
 
+	// Precompiled contract: run natively instead of as bytecode.
+	if pc := lookupPrecompile(to); pc != nil {
+		out, used, perr := runPrecompile(pc, child.Input, budget)
+		in.meter.restore(budget - used)
+		if perr != nil {
+			evm.state.RevertToSnapshot(snap)
+			sc.returnData = nil
+			return sc.stack.push(uint256.Int{})
+		}
+		sc.returnData = out
+		writeReturn(sc.mem, outOff, out, outSize)
+		return sc.stack.push(*uint256.NewInt(1))
+	}
+
 	evm.depth++
 	res := evm.run(child, budget, in.readOnly || kind == kindStatic)
 	evm.depth--
