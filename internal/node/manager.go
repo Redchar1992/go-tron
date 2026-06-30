@@ -50,6 +50,7 @@ type Manager struct {
 	state   *state.State
 	khaos   *khaos.KhaosDB
 	applied []appliedRef // head branch above the committed base; aligned with db sessions
+	lenient bool         // replay-provisioning: auto-fund missing TransferContract owners
 }
 
 // NewManager constructs a Manager over the given revoking database. maxFork bounds how
@@ -64,6 +65,14 @@ func NewManager(d *db.Database, maxFork int64) *Manager {
 
 // State exposes the chain stores (read-only use by callers / tests).
 func (m *Manager) State() *state.State { return m.state }
+
+// EnableReplayProvisioning makes processBlock auto-fund TransferContract owners that are
+// missing or underfunded. It is for differential replay starting from a non-genesis
+// block, where full prior state is unavailable: it lets the pipeline exercise real dense
+// blocks at the cost of balance-equivalence (which is not offline-verifiable anyway —
+// fee/bandwidth correctness is checked separately via the receipt oracle). Root
+// verification (block id + txTrieRoot) is unaffected.
+func (m *Manager) EnableReplayProvisioning() { m.lenient = true }
 
 // Head returns the current chain tip node, or nil before InitGenesis.
 func (m *Manager) Head() *khaos.KBlock { return m.khaos.Head() }
@@ -163,8 +172,39 @@ func (m *Manager) applyOnTop(node *khaos.KBlock) error {
 // It runs inside an already-open revoking session opened by the caller.
 func (m *Manager) processBlock(b *core.Block) error {
 	for i, tx := range b.GetTransactions() {
+		if m.lenient {
+			if err := m.provisionReplay(tx); err != nil {
+				return fmt.Errorf("manager: block %d tx %d provision: %w", block.Number(b), i, err)
+			}
+		}
 		if _, err := actuator.Apply(m.state, tx); err != nil {
 			return fmt.Errorf("manager: block %d tx %d: %w", block.Number(b), i, err)
+		}
+	}
+	return nil
+}
+
+// provisionReplay tops up TransferContract owners to cover their transfer amount when the
+// Manager runs in replay-provisioning mode (see EnableReplayProvisioning). Writes land in
+// the current open session, so they revoke cleanly with the block.
+func (m *Manager) provisionReplay(tx *core.Transaction) error {
+	for _, c := range tx.GetRawData().GetContract() {
+		if c.GetType() != core.Transaction_Contract_TransferContract {
+			continue
+		}
+		tc := new(core.TransferContract)
+		if err := c.GetParameter().UnmarshalTo(tc); err != nil {
+			return err
+		}
+		acc, err := m.state.Accounts.Get(tc.GetOwnerAddress())
+		if err != nil {
+			acc = &core.Account{Address: tc.GetOwnerAddress()}
+		}
+		if acc.GetBalance() < tc.GetAmount() {
+			acc.Balance = tc.GetAmount()
+			if err := m.state.Accounts.Put(acc); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

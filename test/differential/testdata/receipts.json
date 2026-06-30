@@ -1,0 +1,470 @@
+{
+  "defc0037eb4e11d3216f79f5ae252dc90524eef78229c6752aa465d6ebdeea49": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "3ab517abc21dd7b52e2008715fa9023896bd847abc2b12669695c9091f13a964": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "46f8d50a34d72b1fa3fd9f257fd5e225eda6e374b606a368aabde001498167a7": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "f2a9d000953f275a8c36b78c7f68dc140b8da556823d094055df3c31371b48d9": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "8559f2ceb9cb83c24c9b61917a269b1ad6c12deac32fa0c4e9a0e22e2e050d70": {
+    "fee": 0,
+    "netUsage": 216,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "0930f3b00e488a99cca8c35c6c87cffd1b50bb4777821ba3e8d1ef8157e67e53": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "f97eb13f457bb24121ff58388c31feb0ef1478518fd76ade5c0768817563e075": {
+    "fee": 0,
+    "netUsage": 204,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "8d113ab9b3dc1d5ce3e10014d6fa28e94dc0239380e2d4b2b7ed1171bca2c661": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "f992a685020baced5ddd7ae596199508bd36c8bfa8acd330aae8b0680c83f844": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "d51fe7a49c37a8d3aee7957eff65f90e67daf03f800c1505b6fdc44c10fa72e9": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "f9f173f813a7f9e3e14ccd54b942bed1ddef8adf1302421e398a9fb8d3ef8a87": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "23c084d60e7a295f2b28279e81279823af4fcef8444bb54dab316f3bb46e000a": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "1e905583c2238252939e022dadab7831a14a2bf41e9476921c14d18902bd4bec": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "1cb866a6627d18aec58006001843d930f9b4c281013b189c369478be2b966513": {
+    "fee": 0,
+    "netUsage": 204,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "7c69f23b22c1da869661c0c4b0d3906cadc29b9e75beff725e46d3ceeaf79b7d": {
+    "fee": 0,
+    "netUsage": 216,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "6e2e557c900203445758939389f2d02baec8ee471ba81a12c647bfd9f0f8c4f8": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "51e5bb44c8f75f9e1701f9b20856816232fd2f98b64fc9ebc5a596feca2c67d6": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "d9380d3ef142f0fc4bafadb66c5c4e4a07ee6432bee47d04f8267cb389dedb1a": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "3671d4ef78544cb41ab9e816bf8f96dbdbb19139de46417114919500d397e7f0": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "581b47353c6a6b67d4e95c9a0d5d0abe34152782e5412675a87d3f235696ceaa": {
+    "fee": 0,
+    "netUsage": 204,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "9c66984a0ed2f8e7d84a93dd59326a34b9533e0e969ef1a00452849fd4b82a4a": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "301d63c17c9c7210e2782409f98ab4693080c500a5a4563d620c6b78712eb01a": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "447d8a37b06dffda6ba0e17778199ad9e79aa9f60393aa70edb98b22b87b1120": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "a74afdc389576d4d223f04c0fae7559d5fac419135cbac237e70758750fdb657": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "29e2c4dbfd4c44c03675bc16c9ed60e40f8ea1889868a2888e9b44d4cebbe285": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "db8086a56df5e59941a1e9479f621e707d860f29b28043c7a7f97c3e44c850fe": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "3cd8cb0604a36e2279753392c1897ab1ad6e014236e3e0950bdf62287a82cf6c": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "57c305d114ad7803bb1c0899b9643d7d4f6e5e47e5e99abc4e96435be65c7804": {
+    "fee": 0,
+    "netUsage": 204,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "16ddd3c29d54f4fa8297ed122a843a7cbcefd485d2b03f94e580658ce8cd195f": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "78d383eea8b2ef5413a8763880ff2f13239acfbf06fa482558dea58efa38c428": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "d8cc48431d3c2046d02fc6101faaf3178ffc0b59a2bad1eb508498300198085c": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "e4c4d945d614e4a66ccadb6c9132624d7470a13776d3ca74354308358cada997": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "793e5f007e6ca32c8869d8a1563384d20abc12bae1aed6e9afd2430d5eb45222": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "c1c365c2b697d3f99f8dcee35335fadfde1b7ba39eda8b35d4e8621e8b6f191a": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "82f79e7ccfd912a1b77feb34ab2902197d8df2cd10935c8c2d6cb7126d6a0d53": {
+    "fee": 0,
+    "netUsage": 204,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "7474fab040401217c2d426582f9c56b972abc864593320b4003a1125d8538a7e": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "f0ac1e0cbf20b933dbc3a3ecb5d7d738d97a9e5c3b079d406d7eb57f5413b35f": {
+    "fee": 0,
+    "netUsage": 0,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "46f59782bce1c204646ee290814251e2c754b52cd344dbfa2a1d8e2c8a9b6e57": {
+    "fee": 0,
+    "netUsage": 0,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "c17fe410b0f6d77e4b33cb93e7e30c3f6e15b18bdc3b7a26b89a2fabfd411e7f": {
+    "fee": 0,
+    "netUsage": 0,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "6950e64eae283da620e69693688284e4e082bf02bf7b4011588c095b1190e0b3": {
+    "fee": 0,
+    "netUsage": 0,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "c6cbdd0b952dbe9f9c1f8ac6fd1908409dcccc813272ffb522b8f5d698f3122f": {
+    "fee": 0,
+    "netUsage": 0,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "19ad88344f7f78b20a5581b965601baa2721d65ad1da981fa33f5e88f276224c": {
+    "fee": 0,
+    "netUsage": 0,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "9b146daaf4fa32f8cc7610c495c54a503455241aa2b03b132779c598fdcfabf9": {
+    "fee": 0,
+    "netUsage": 0,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "08237455e22a2c3f883db2faf0b413f5984a285053c5025658cf79a8acb5ccd8": {
+    "fee": 0,
+    "netUsage": 0,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "89cb82b46fcf4d3395473b53d0fdb556ebe16f7e9d1d93c9a2d77631bfeb2be5": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "1a4a79046b53c27d9060b602548dc43cbea37fc462cb1aff6c2c255d7f3303ae": {
+    "fee": 0,
+    "netUsage": 205,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "e91fd87649fdc91ff83ee0b148ff879acc79b82edeb542ba64ee6a3e15e0d103": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "a1ad5026de3d831255ef7f86935bbef2993483fdb100c80de90aa59ba537582e": {
+    "fee": 2130,
+    "netUsage": 0,
+    "netFee": 2130,
+    "energyUsage": 0
+  },
+  "ee8f7e996bb9d7d23491786a7676a6da6320f031b5e0fef5d34d434465fbb119": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "4d1e5a5d8d8969a5185b6725f2cee6805bb845fe005660834af0a878a6797a72": {
+    "fee": 0,
+    "netUsage": 204,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "32563e9e0406451a9d4bfc15240c2ca8e918e53dabbd081f1d062303984ff4fc": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "125d0d6eea723314b47300cd80252e2f4eda6574db93c819de4370bc84d8f81f": {
+    "fee": 0,
+    "netUsage": 201,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "b70d8484ca9f0e6e11745609c200dc16a2adab655b5a7ba46f902e525aaed8d4": {
+    "fee": 0,
+    "netUsage": 203,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "1e8921909d74ca72fe9a22a3b87dde90532627f3bc3c772def6592912112a6c6": {
+    "fee": 100000,
+    "netUsage": 0,
+    "netFee": 100000,
+    "energyUsage": 0
+  },
+  "ffc898d52f4f4fb93c864752338c598fa6c6c8a60947626b14eac2482de3e6e2": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "709e0225a17df67ea18b82ea19c28725e34d5d32d899f9f9282794d8594eff62": {
+    "fee": 0,
+    "netUsage": 206,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "188271cc215abff26b3e09c54eef2a1cb67b50c9d4f6ed8311d16fc668009385": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "3a616e7a64c8600d3fa1d70885a839c1cdcd2e591d727c8f63190fbf08c6a4d7": {
+    "fee": 0,
+    "netUsage": 204,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "f7a3aeabfc1fc9cf809ba7f1dac4298a77c315329ce28bf5e16234abacec6275": {
+    "fee": 0,
+    "netUsage": 204,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "a04c1bd9a3479f983113187a501dae891970cfb01dbe0423e11c0e1d2272ffc5": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "34a0960e7d4e59709c4e6a030118fdcab848100dbb18c6c18d411367d1483d00": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "1ce8dfc5c40f7eb22641cfbb49086f404abfd9900243b7251a95c456bd22d617": {
+    "fee": 0,
+    "netUsage": 204,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "8cbf29c028adeccf34928c4b5db654cc8a555fa2b4bb0cfc6b9cd3c26905d0b3": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "d525719b80d71896476342777bf54ce914da39c2b654806d2aa5540feb59163e": {
+    "fee": 0,
+    "netUsage": 204,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "81f4f6f24f1f4b075ef17b95affe117989a8d6bb2596940f15fe34a427943c0c": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "e050d3fa47d98b35aeee906905f1082aa4b6f431803755176f8e67fa1c47d199": {
+    "fee": 0,
+    "netUsage": 201,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "c56386ad1d8de8e2c3f686e9ad6ec390549699bb24426944dc00ac212b6aaf53": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "8bd816614d0f12b93741c214711bfbcba5179ed6cb0c97c6c3dd4303bac14aec": {
+    "fee": 0,
+    "netUsage": 203,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "0f2155cb64ad513ffd8da55d11bdd096337354c5eebfc80e811c4e5eac91c8ab": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "73ad813f6f1f721729e793dbdf7a262a5b5625cc275e9c35546db33ffd65b6f6": {
+    "fee": 0,
+    "netUsage": 204,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "1564f542f1f875a7435f14ce56026e0aa4b4ef3e3e3b9f9f238d52a57c3b5113": {
+    "fee": 0,
+    "netUsage": 205,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "fd7180aec37052077f81bf93a332f1595ad66dffc984db214ccf800e3db1747c": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "00405e8e3956d48a1fde8c7c0e84a4b3d775922c320570e6f08c28b99debe26e": {
+    "fee": 0,
+    "netUsage": 203,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "efe6a7777c0892435cb8ab7c7804c1cf755f3a0d6dba978d8687ff655b48d638": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "e8c219adc1e32056c822293e27ab7865791047d876991fcc14da1c00b34e6d66": {
+    "fee": 0,
+    "netUsage": 203,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "3704be1162b23e7a98188b8eadb90c3923dfdfee17b274d70c56861a7d43665e": {
+    "fee": 0,
+    "netUsage": 208,
+    "netFee": 0,
+    "energyUsage": 0
+  },
+  "b5125626894533c16eb1fe279755308eb9599bace478b9b64b0c1a4f070c9a75": {
+    "fee": 2120,
+    "netUsage": 0,
+    "netFee": 2120,
+    "energyUsage": 0
+  },
+  "cd59d6774bd8497c116b6e3f2e800da40d3787e2a0be43a89479cce7af728709": {
+    "fee": 0,
+    "netUsage": 203,
+    "netFee": 0,
+    "energyUsage": 0
+  }
+}

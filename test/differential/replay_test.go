@@ -1,13 +1,14 @@
-// Package differential is the M2 replay oracle: it reconstructs real TRON mainnet blocks
-// from committed fixtures (captured via capture_fixtures.py) and asserts that go-tron's
-// recomputed block id and txTrieRoot equal the on-chain values, byte-for-byte, for every
-// block — and that the contiguous run replays through the node Manager with correct
-// parent linkage and an advancing head.
+// Package differential is the M2/M2.5 replay oracle: it reconstructs real TRON mainnet
+// blocks from committed fixtures (captured via capture_fixtures.py) and asserts that
+// go-tron's recomputed block id and txTrieRoot equal the on-chain values, byte-for-byte,
+// for every block — that contiguous runs replay through the node Manager with correct
+// parent linkage and an advancing head — and that the bandwidth (net) fee model matches
+// on-chain transaction receipts.
 //
-// This is the M2 exit criterion: "replay the first N mainnet blocks (no smart contracts)
-// with matching roots." The blocks captured here carry no smart-contract executions
-// (TVM is M3); they exercise empty blocks (ZERO txTrieRoot), genesis allocations, and
-// TransferContract/VoteWitnessContract transactions.
+// Block/transaction reconstruction and the root check live in internal/replay, the same
+// code path the live `gotron --replay` diagnostic uses. The blocks captured here carry no
+// smart-contract executions (TVM is M3); they exercise empty blocks (ZERO txTrieRoot),
+// genesis allocations, and Transfer/TransferAsset/Vote/Freeze transactions.
 package differential
 
 import (
@@ -17,129 +18,37 @@ import (
 	"os"
 	"testing"
 
-	"google.golang.org/protobuf/proto"
-
+	"github.com/Redchar1992/go-tron/internal/bandwidth"
 	"github.com/Redchar1992/go-tron/internal/block"
 	"github.com/Redchar1992/go-tron/internal/db"
 	"github.com/Redchar1992/go-tron/internal/node"
-	core "github.com/Redchar1992/go-tron/internal/proto/core"
+	"github.com/Redchar1992/go-tron/internal/replay"
 )
 
-type txFixture struct {
-	RawDataHex string   `json:"rawDataHex"`
-	Signatures []string `json:"signatures"`
-}
-
-type blockFixture struct {
-	Number           int64       `json:"number"`
-	BlockID          string      `json:"blockID"`
-	Timestamp        int64       `json:"timestamp"`
-	ParentHash       string      `json:"parentHash"`
-	TxTrieRoot       string      `json:"txTrieRoot"`
-	WitnessAddress   string      `json:"witnessAddress"`
-	WitnessID        int64       `json:"witnessId"`
-	Version          int32       `json:"version"`
-	AccountStateRoot string      `json:"accountStateRoot"`
-	Transactions     []txFixture `json:"transactions"`
-}
-
-type fixtureFile struct {
-	Blocks []blockFixture `json:"blocks"`
-}
-
-func mustHex(t *testing.T, s string) []byte {
+func load(t *testing.T, name string) *replay.File {
 	t.Helper()
-	if s == "" {
-		return nil
-	}
-	b, err := hex.DecodeString(s)
+	f, err := replay.Load("testdata/" + name)
 	if err != nil {
-		t.Fatalf("bad hex %q: %v", s, err)
-	}
-	return b
-}
-
-func loadFixtures(t *testing.T, name string) fixtureFile {
-	t.Helper()
-	raw, err := os.ReadFile("testdata/" + name)
-	if err != nil {
-		t.Fatalf("read %s (run capture_fixtures.py): %v", name, err)
-	}
-	var f fixtureFile
-	if err := json.Unmarshal(raw, &f); err != nil {
-		t.Fatal(err)
-	}
-	if len(f.Blocks) == 0 {
-		t.Fatalf("%s has no blocks", name)
+		t.Fatalf("load %s (run capture_fixtures.py): %v", name, err)
 	}
 	return f
-}
-
-// buildBlock reconstructs a core.Block from a fixture. The header's txTrieRoot is set to
-// OUR recomputed root (from the transaction bytes), not the fixture's — so that asserting
-// the resulting block id against the on-chain id is an end-to-end check of merkle +
-// header serialization + the block-number prefix.
-func buildBlock(t *testing.T, fx blockFixture) *core.Block {
-	t.Helper()
-	txs := make([]*core.Transaction, 0, len(fx.Transactions))
-	for i, tf := range fx.Transactions {
-		var tr core.TransactionRaw
-		if err := proto.Unmarshal(mustHex(t, tf.RawDataHex), &tr); err != nil {
-			t.Fatalf("block %d tx %d unmarshal raw: %v", fx.Number, i, err)
-		}
-		full := &core.Transaction{RawData: &tr}
-		for _, s := range tf.Signatures {
-			full.Signature = append(full.Signature, mustHex(t, s))
-		}
-		txs = append(txs, full)
-	}
-	root, err := block.CalcTxTrieRoot(txs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &core.Block{
-		BlockHeader: &core.BlockHeader{RawData: &core.BlockHeaderRaw{
-			Timestamp:        fx.Timestamp,
-			Number:           fx.Number,
-			ParentHash:       mustHex(t, fx.ParentHash),
-			TxTrieRoot:       root,
-			WitnessAddress:   mustHex(t, fx.WitnessAddress),
-			WitnessId:        fx.WitnessID,
-			Version:          fx.Version,
-			AccountStateRoot: mustHex(t, fx.AccountStateRoot),
-		}},
-		Transactions: txs,
-	}
-}
-
-// assertRoots checks that our recomputed txTrieRoot and block id match the on-chain
-// fixture values byte-for-byte.
-func assertRoots(t *testing.T, fx blockFixture, b *core.Block) {
-	t.Helper()
-	gotRoot := hex.EncodeToString(b.GetBlockHeader().GetRawData().GetTxTrieRoot())
-	if gotRoot != fx.TxTrieRoot {
-		t.Fatalf("block %d txTrieRoot mismatch:\n got  %s\n want %s", fx.Number, gotRoot, fx.TxTrieRoot)
-	}
-	id, err := block.ID(b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := hex.EncodeToString(id); got != fx.BlockID {
-		t.Fatalf("block %d id mismatch:\n got  %s\n want %s", fx.Number, got, fx.BlockID)
-	}
 }
 
 // TestContiguousReplay replays a contiguous run from genesis through the node Manager,
 // asserting matching roots, parent linkage, and an advancing head at every height.
 func TestContiguousReplay(t *testing.T) {
-	f := loadFixtures(t, "chain.json")
-
-	// Root (block 0): verify roots, then seed the Manager from it.
-	root := buildBlock(t, f.Blocks[0])
+	f := load(t, "chain.json")
 	if f.Blocks[0].Number != 0 {
 		t.Fatalf("chain.json must start at block 0, starts at %d", f.Blocks[0].Number)
 	}
-	assertRoots(t, f.Blocks[0], root)
+
+	root, err := f.Blocks[0].Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Blocks[0].Check(root); err != nil {
+		t.Fatal(err)
+	}
 
 	m := node.NewManager(db.NewDatabase(db.NewMemKV()), 0)
 	if err := m.Start(root); err != nil {
@@ -147,40 +56,158 @@ func TestContiguousReplay(t *testing.T) {
 	}
 
 	prevID, _ := block.ID(root)
-	for _, fx := range f.Blocks[1:] {
-		b := buildBlock(t, fx)
-		assertRoots(t, fx, b)
-
-		// Parent linkage: the header's parentHash must equal the prior block's id.
+	for _, bf := range f.Blocks[1:] {
+		b, err := bf.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := bf.Check(b); err != nil {
+			t.Fatal(err)
+		}
 		if !bytes.Equal(block.ParentHash(b), prevID) {
-			t.Fatalf("block %d parentHash %x != prev id %x", fx.Number, block.ParentHash(b), prevID)
+			t.Fatalf("block %d parentHash %x != prev id %x", bf.Number, block.ParentHash(b), prevID)
 		}
-
 		if err := m.PushBlock(b); err != nil {
-			t.Fatalf("block %d PushBlock: %v", fx.Number, err)
+			t.Fatalf("block %d PushBlock: %v", bf.Number, err)
 		}
-		if m.Head().Num != fx.Number {
-			t.Fatalf("after block %d head num = %d", fx.Number, m.Head().Num)
+		if m.Head().Num != bf.Number {
+			t.Fatalf("after block %d head num = %d", bf.Number, m.Head().Num)
 		}
-		if got := hex.EncodeToString(m.Head().ID); got != fx.BlockID {
-			t.Fatalf("after block %d head id = %s, want %s", fx.Number, got, fx.BlockID)
+		if got := hex.EncodeToString(m.Head().ID); got != bf.BlockID {
+			t.Fatalf("after block %d head id = %s, want %s", bf.Number, got, bf.BlockID)
 		}
 		prevID = m.Head().ID
 	}
 	t.Logf("replayed blocks 0..%d through the Manager with matching roots", f.Blocks[len(f.Blocks)-1].Number)
 }
 
-// TestSpotBlockRoots verifies root equivalence for individual transaction-bearing blocks
-// (multi-tx Merkle over real TransferContract/VoteWitnessContract bytes). These are not
-// contiguous with genesis, so they are checked for roots only, not replayed through state.
-func TestSpotBlockRoots(t *testing.T) {
-	f := loadFixtures(t, "spot.json")
-	for _, fx := range f.Blocks {
-		if len(fx.Transactions) == 0 {
-			t.Fatalf("spot block %d has no transactions", fx.Number)
+// TestDenseContiguousReplay replays a dense, contiguous pre-TVM span (many Transfer /
+// TransferAsset / Freeze / Vote transactions per block) through the node Manager,
+// asserting matching block id + txTrieRoot and parent linkage at every height. The span
+// starts mid-chain, so the first block seeds the Manager as the replay root and
+// replay-provisioning funds TransferContract owners (balances are not offline-verifiable;
+// fee/bandwidth correctness is checked by TestBandwidthReceiptOracle instead).
+func TestDenseContiguousReplay(t *testing.T) {
+	f := load(t, "dense.json")
+
+	root, err := f.Blocks[0].Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Blocks[0].Check(root); err != nil {
+		t.Fatal(err)
+	}
+
+	m := node.NewManager(db.NewDatabase(db.NewMemKV()), 0)
+	m.EnableReplayProvisioning()
+	if err := m.Start(root); err != nil {
+		t.Fatal(err)
+	}
+
+	prevID, _ := block.ID(root)
+	totalTx := len(f.Blocks[0].Transactions)
+	for _, bf := range f.Blocks[1:] {
+		b, err := bf.Build()
+		if err != nil {
+			t.Fatal(err)
 		}
-		b := buildBlock(t, fx)
-		assertRoots(t, fx, b)
-		t.Logf("block %d: %d txs, txTrieRoot + id match chain", fx.Number, len(fx.Transactions))
+		if err := bf.Check(b); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(block.ParentHash(b), prevID) {
+			t.Fatalf("block %d parentHash %x != prev id %x", bf.Number, block.ParentHash(b), prevID)
+		}
+		if err := m.PushBlock(b); err != nil {
+			t.Fatalf("block %d PushBlock: %v", bf.Number, err)
+		}
+		if m.Head().Num != bf.Number {
+			t.Fatalf("after block %d head num = %d", bf.Number, m.Head().Num)
+		}
+		prevID = m.Head().ID
+		totalTx += len(bf.Transactions)
+	}
+	t.Logf("replayed dense blocks %d..%d (%d txs) through the Manager with matching roots",
+		f.Blocks[0].Number, f.Blocks[len(f.Blocks)-1].Number, totalTx)
+}
+
+// TestBandwidthReceiptOracle checks go-tron's bandwidth model against on-chain receipts.
+// For every transaction in the dense span it computes our charged size and asserts the
+// state-independent invariant: a bandwidth-COVERED tx has net_usage == Size; a
+// bandwidth-BURNED tx has net_fee == Size*Rate. Transactions whose fee includes a
+// non-bandwidth component (account creation, freeze, multi-sig) are counted as not yet
+// modeled rather than silently passed.
+func TestBandwidthReceiptOracle(t *testing.T) {
+	f := load(t, "dense.json")
+
+	raw, err := os.ReadFile("testdata/receipts.json")
+	if err != nil {
+		t.Fatalf("read receipts.json (run capture_fixtures.py): %v", err)
+	}
+	type receipt struct {
+		Fee      int64 `json:"fee"`
+		NetUsage int64 `json:"netUsage"`
+		NetFee   int64 `json:"netFee"`
+	}
+	var receipts map[string]receipt
+	if err := json.Unmarshal(raw, &receipts); err != nil {
+		t.Fatal(err)
+	}
+
+	var covered, burned, unmodeled int
+	for _, b := range f.Blocks {
+		for _, tf := range b.Transactions {
+			r, ok := receipts[tf.TxID]
+			if !ok {
+				t.Fatalf("no receipt for tx %s", tf.TxID)
+			}
+			tx, err := tf.BuildTx()
+			if err != nil {
+				t.Fatal(err)
+			}
+			size, err := bandwidth.Size(tx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case r.NetUsage > 0 && r.NetFee == 0 && r.Fee == 0:
+				// Bandwidth covered by free/staked points.
+				if int64(size) != r.NetUsage {
+					t.Fatalf("tx %s covered: Size=%d != net_usage=%d", tf.TxID, size, r.NetUsage)
+				}
+				covered++
+			case r.NetFee == bandwidth.BurnFee(size) && r.Fee == r.NetFee:
+				// Bandwidth burned as TRX; no extra (account-creation/etc.) fee.
+				burned++
+			default:
+				// Fee carries a non-bandwidth component we do not model yet.
+				unmodeled++
+			}
+		}
+	}
+	total := covered + burned + unmodeled
+	t.Logf("bandwidth oracle over %d txs: covered=%d burned=%d unmodeled=%d",
+		total, covered, burned, unmodeled)
+	if covered+burned == 0 {
+		t.Fatal("expected at least one tx with a verifiable pure-bandwidth charge")
+	}
+}
+
+// TestSpotBlockRoots verifies root equivalence for individual transaction-bearing blocks
+// (multi-tx Merkle over real Transfer/VoteWitness bytes). These are not contiguous with
+// genesis, so they are checked for roots only, not replayed through state.
+func TestSpotBlockRoots(t *testing.T) {
+	f := load(t, "spot.json")
+	for _, bf := range f.Blocks {
+		if len(bf.Transactions) == 0 {
+			t.Fatalf("spot block %d has no transactions", bf.Number)
+		}
+		b, err := bf.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := bf.Check(b); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("block %d: %d txs, txTrieRoot + id match chain", bf.Number, len(bf.Transactions))
 	}
 }

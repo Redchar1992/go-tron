@@ -19,21 +19,26 @@ import json
 import os
 import subprocess
 
-TRONGRID = "https://api.trongrid.io/wallet/getblockbynum"
+BASE = "https://api.trongrid.io/wallet"
 CHAIN_END = 20            # contiguous blocks 0..CHAIN_END
 SPOT_BLOCKS = [1000000, 2000000]  # tx-bearing blocks (no smart contracts in these)
+DENSE_START, DENSE_END = 3000000, 3000011  # contiguous dense pre-TVM span
 TESTDATA = os.path.join(os.path.dirname(__file__), "testdata")
 
 
-def fetch(num):
+def call(endpoint, payload):
     # Shell out to curl: this machine's Python SSL trust store is incomplete.
     out = subprocess.check_output([
         "curl", "-sS", "--max-time", "20",
-        "-X", "POST", TRONGRID,
+        "-X", "POST", f"{BASE}/{endpoint}",
         "-H", "Content-Type: application/json",
-        "-d", json.dumps({"num": num}),
+        "-d", json.dumps(payload),
     ])
     return json.loads(out)
+
+
+def fetch(num):
+    return call("getblockbynum", {"num": num})
 
 
 def to_fixture(b):
@@ -41,6 +46,7 @@ def to_fixture(b):
     txs = []
     for tx in b.get("transactions", []):
         txs.append({
+            "txID": tx["txID"],
             "rawDataHex": tx["raw_data_hex"],
             "signatures": tx.get("signature", []),
         })
@@ -72,6 +78,28 @@ def main():
         json.dump({"blocks": spot}, f, indent=2)
     print("wrote spot.json:", ", ".join(
         f"#{b['number']} ({len(b['transactions'])} txs)" for b in spot))
+
+    # Dense contiguous pre-TVM span + per-transaction receipts (the fee/bandwidth oracle).
+    dense = [to_fixture(fetch(n)) for n in range(DENSE_START, DENSE_END + 1)]
+    with open(os.path.join(TESTDATA, "dense.json"), "w") as f:
+        json.dump({"blocks": dense}, f, indent=2)
+    ntx = sum(len(b["transactions"]) for b in dense)
+    print(f"wrote dense.json: blocks {DENSE_START}..{DENSE_END} ({ntx} txs)")
+
+    receipts = {}
+    for b in dense:
+        for tx in b["transactions"]:
+            info = call("gettransactioninfobyid", {"value": tx["txID"]})
+            r = info.get("receipt", {})
+            receipts[tx["txID"]] = {
+                "fee": info.get("fee", 0),
+                "netUsage": r.get("net_usage", 0),
+                "netFee": r.get("net_fee", 0),
+                "energyUsage": r.get("energy_usage", 0),
+            }
+    with open(os.path.join(TESTDATA, "receipts.json"), "w") as f:
+        json.dump(receipts, f, indent=2)
+    print(f"wrote receipts.json: {len(receipts)} tx receipts")
 
 
 if __name__ == "__main__":

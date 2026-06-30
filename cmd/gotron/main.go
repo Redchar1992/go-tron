@@ -25,6 +25,7 @@ func main() {
 		witness     = flag.Bool("witness", false, "run as a Super Representative (block producer)")
 		solidity    = flag.Bool("solidity", false, "run as a solidity (confirmed-state) node")
 		p2pDisable  = flag.Bool("p2p-disable", false, "disable P2P networking (isolated API/diagnostics)")
+		replayPath  = flag.String("replay", "", "differential-replay a captured-block fixture and exit (diagnostic)")
 		logLevel    = flag.String("log-level", "info", "log level: debug|info|warn|error")
 	)
 	flag.Parse()
@@ -36,6 +37,18 @@ func main() {
 
 	log := newLogger(*logLevel)
 	log.Info("gotron starting", "version", version.String())
+
+	// Diagnostic mode: replay a fixture through the block pipeline and exit. Does not
+	// start networking or the API — it verifies block id + txTrieRoot against the chain.
+	if *replayPath != "" {
+		n, err := node.ReplayFile(*replayPath, log)
+		if err != nil {
+			log.Error("replay failed", "err", err)
+			os.Exit(1)
+		}
+		log.Info("replay finished", "blocks", n)
+		return
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
