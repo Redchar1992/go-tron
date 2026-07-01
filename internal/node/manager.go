@@ -46,11 +46,12 @@ type appliedRef struct {
 
 // Manager drives the block/transaction pipeline over state + db + khaos.
 type Manager struct {
-	db      *db.Database
-	state   *state.State
-	khaos   *khaos.KhaosDB
-	applied []appliedRef // head branch above the committed base; aligned with db sessions
-	lenient bool         // replay-provisioning: auto-fund missing TransferContract owners
+	db          *db.Database
+	state       *state.State
+	khaos       *khaos.KhaosDB
+	applied     []appliedRef // head branch above the committed base; aligned with db sessions
+	lenient     bool         // replay-provisioning: auto-fund missing TransferContract owners
+	receiptSink func(blockNum int64, receipts []*actuator.Receipt)
 }
 
 // NewManager constructs a Manager over the given revoking database. maxFork bounds how
@@ -65,6 +66,15 @@ func NewManager(d *db.Database, maxFork int64) *Manager {
 
 // State exposes the chain stores (read-only use by callers / tests).
 func (m *Manager) State() *state.State { return m.state }
+
+// SetReceiptSink registers a callback invoked with each applied block's VM receipts
+// (energy bills + execution results from CreateSmartContract/TriggerSmartContract). The
+// differential harness uses it to diff our receipts against on-chain values; nil (default)
+// disables it. Receipts are emitted only for blocks that reach processBlock's tail (i.e.
+// applied, not revoked).
+func (m *Manager) SetReceiptSink(fn func(blockNum int64, receipts []*actuator.Receipt)) {
+	m.receiptSink = fn
+}
 
 // EnableReplayProvisioning makes processBlock auto-fund TransferContract owners that are
 // missing or underfunded. It is for differential replay starting from a non-genesis
@@ -177,15 +187,21 @@ func (m *Manager) processBlock(b *core.Block) error {
 		Timestamp: hdr.GetTimestamp(),
 		Witness:   hdr.GetWitnessAddress(),
 	}
+	var receipts []*actuator.Receipt
 	for i, tx := range b.GetTransactions() {
 		if m.lenient {
 			if err := m.provisionReplay(tx); err != nil {
 				return fmt.Errorf("manager: block %d tx %d provision: %w", block.Number(b), i, err)
 			}
 		}
-		if _, err := actuator.Apply(m.state, tx, blk); err != nil {
+		res, err := actuator.Apply(m.state, tx, blk)
+		if err != nil {
 			return fmt.Errorf("manager: block %d tx %d: %w", block.Number(b), i, err)
 		}
+		receipts = append(receipts, res.Receipts...)
+	}
+	if m.receiptSink != nil && len(receipts) > 0 {
+		m.receiptSink(blk.Number, receipts)
 	}
 	return nil
 }

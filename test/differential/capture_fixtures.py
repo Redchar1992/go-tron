@@ -95,7 +95,11 @@ def main():
                 "fee": info.get("fee", 0),
                 "netUsage": r.get("net_usage", 0),
                 "netFee": r.get("net_fee", 0),
+                # Energy fields drive the M3.5 energy-receipt oracle (contract txs).
                 "energyUsage": r.get("energy_usage", 0),
+                "energyFee": r.get("energy_fee", 0),
+                "originEnergyUsage": r.get("origin_energy_usage", 0),
+                "energyUsageTotal": r.get("energy_usage_total", 0),
             }
     with open(os.path.join(TESTDATA, "receipts.json"), "w") as f:
         json.dump(receipts, f, indent=2)

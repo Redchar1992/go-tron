@@ -14,8 +14,6 @@ package differential
 import (
 	"bytes"
 	"encoding/hex"
-	"encoding/json"
-	"os"
 	"testing"
 
 	"github.com/Redchar1992/go-tron/internal/bandwidth"
@@ -139,18 +137,9 @@ func TestDenseContiguousReplay(t *testing.T) {
 func TestBandwidthReceiptOracle(t *testing.T) {
 	f := load(t, "dense.json")
 
-	raw, err := os.ReadFile("testdata/receipts.json")
+	receipts, err := replay.LoadReceipts("testdata/receipts.json")
 	if err != nil {
-		t.Fatalf("read receipts.json (run capture_fixtures.py): %v", err)
-	}
-	type receipt struct {
-		Fee      int64 `json:"fee"`
-		NetUsage int64 `json:"netUsage"`
-		NetFee   int64 `json:"netFee"`
-	}
-	var receipts map[string]receipt
-	if err := json.Unmarshal(raw, &receipts); err != nil {
-		t.Fatal(err)
+		t.Fatalf("load receipts.json (run capture_fixtures.py): %v", err)
 	}
 
 	var covered, burned, unmodeled int
