@@ -19,17 +19,37 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/protobuf/proto"
+
+	"github.com/Redchar1992/go-tron/internal/crypto"
 	core "github.com/Redchar1992/go-tron/internal/proto/core"
 	"github.com/Redchar1992/go-tron/internal/state"
 )
 
+// marshal serializes protobuf deterministically (used to derive the transaction id).
+var marshal = proto.MarshalOptions{Deterministic: true}
+
 // ErrInsufficientBalance is returned when an owner cannot cover a transfer amount.
 var ErrInsufficientBalance = errors.New("actuator: insufficient balance")
 
-// Context carries the mutable state stores and the contract under execution.
+// BlockContext carries the block-scoped values a VM transaction reads (number, timestamp,
+// producing witness). Native (non-VM) actuators ignore it.
+type BlockContext struct {
+	Number    int64
+	Timestamp int64
+	Witness   []byte // 21-byte producer (coinbase) address
+}
+
+// Context carries the mutable state stores, the contract under execution, and the
+// block/transaction scope a VM actuator needs. Receipt is populated by actuators that run
+// the TVM (nil for native actuators).
 type Context struct {
 	State    *state.State
 	Contract *core.Transaction_Contract
+	Tx       *core.Transaction
+	TxID     []byte // SHA-256(raw_data): the java-tron transaction id
+	Block    BlockContext
+	Receipt  *Receipt
 }
 
 // Actuator validates and executes one contract type against state.
@@ -39,30 +59,50 @@ type Actuator interface {
 }
 
 // registry maps a ContractType to its actuator. Types absent from the registry are
-// treated as no-ops in M2 (see package doc).
+// treated as no-ops (see package doc).
 var registry = map[core.Transaction_Contract_ContractType]Actuator{
-	core.Transaction_Contract_TransferContract: transferActuator{},
+	core.Transaction_Contract_TransferContract:     transferActuator{},
+	core.Transaction_Contract_CreateSmartContract:  vmActuator{create: true},
+	core.Transaction_Contract_TriggerSmartContract: vmActuator{create: false},
+}
+
+// ApplyResult is the outcome of applying one transaction: the count of unhandled
+// (unregistered) contracts and the receipts produced by any VM actuators.
+type ApplyResult struct {
+	Unhandled int
+	Receipts  []*Receipt
+}
+
+// TxID returns the java-tron transaction id: SHA-256 of the deterministically-serialized
+// raw_data (getTransactionId — distinct from the whole-tx Merkle hash used for txTrieRoot).
+func TxID(tx *core.Transaction) []byte {
+	b, _ := marshal.Marshal(tx.GetRawData())
+	return crypto.Sha256(b)
 }
 
 // Apply runs every contract in a transaction against state: validate then execute, in
-// order. Unregistered contract types are skipped (no-op) and reported via the returned
-// count of unhandled contracts.
-func Apply(st *state.State, tx *core.Transaction) (unhandled int, err error) {
+// order. Unregistered contract types are skipped (no-op) and reported via ApplyResult.
+func Apply(st *state.State, tx *core.Transaction, blk BlockContext) (ApplyResult, error) {
+	var out ApplyResult
+	txID := TxID(tx)
 	for i, c := range tx.GetRawData().GetContract() {
 		act, ok := registry[c.GetType()]
 		if !ok {
-			unhandled++
+			out.Unhandled++
 			continue
 		}
-		ctx := &Context{State: st, Contract: c}
+		ctx := &Context{State: st, Contract: c, Tx: tx, TxID: txID, Block: blk}
 		if err := act.Validate(ctx); err != nil {
-			return unhandled, fmt.Errorf("contract %d (%v) validate: %w", i, c.GetType(), err)
+			return out, fmt.Errorf("contract %d (%v) validate: %w", i, c.GetType(), err)
 		}
 		if err := act.Execute(ctx); err != nil {
-			return unhandled, fmt.Errorf("contract %d (%v) execute: %w", i, c.GetType(), err)
+			return out, fmt.Errorf("contract %d (%v) execute: %w", i, c.GetType(), err)
+		}
+		if ctx.Receipt != nil {
+			out.Receipts = append(out.Receipts, ctx.Receipt)
 		}
 	}
-	return unhandled, nil
+	return out, nil
 }
 
 // transferActuator handles TransferContract (TRX transfer). Fee/bandwidth accounting is

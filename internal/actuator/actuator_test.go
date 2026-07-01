@@ -35,7 +35,7 @@ func TestTransferApplyAndRollback(t *testing.T) {
 
 	// Apply inside a revoking session, then revoke — state must be unchanged.
 	d.BuildSession()
-	if _, err := Apply(st, transferTx(t, owner, to, 300)); err != nil {
+	if _, err := Apply(st, transferTx(t, owner, to, 300), BlockContext{}); err != nil {
 		t.Fatal(err)
 	}
 	if a, _ := st.Accounts.Get(owner); a.GetBalance() != 700 {
@@ -54,7 +54,7 @@ func TestTransferApplyAndRollback(t *testing.T) {
 
 	// Apply and commit — state persists.
 	d.BuildSession()
-	if _, err := Apply(st, transferTx(t, owner, to, 300)); err != nil {
+	if _, err := Apply(st, transferTx(t, owner, to, 300), BlockContext{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.Commit(); err != nil {
@@ -72,7 +72,7 @@ func TestTransferInsufficientBalance(t *testing.T) {
 	owner := []byte{0x41, 1, 2, 3}
 	st := state.New(db.NewDatabase(db.NewMemKV()))
 	st.Accounts.Put(&core.Account{Address: owner, Balance: 100})
-	if _, err := Apply(st, transferTx(t, owner, []byte{0x41, 5}, 500)); err == nil {
+	if _, err := Apply(st, transferTx(t, owner, []byte{0x41, 5}, 500), BlockContext{}); err == nil {
 		t.Fatal("expected insufficient-balance error")
 	}
 }
@@ -86,11 +86,11 @@ func TestUnhandledContractIsNoOp(t *testing.T) {
 			Parameter: param,
 		}},
 	}}
-	n, err := Apply(st, tx)
+	res, err := Apply(st, tx, BlockContext{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("unhandled count = %d, want 1", n)
+	if res.Unhandled != 1 {
+		t.Fatalf("unhandled count = %d, want 1", res.Unhandled)
 	}
 }

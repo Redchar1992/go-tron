@@ -25,6 +25,8 @@ type State struct {
 	DB        *db.Database
 	Accounts  *AccountStore
 	Witnesses *WitnessStore
+	Contracts *ContractStore
+	Storage   *StorageStore
 }
 
 // New builds the store set over the given database.
@@ -33,6 +35,8 @@ func New(d *db.Database) *State {
 		DB:        d,
 		Accounts:  &AccountStore{d},
 		Witnesses: &WitnessStore{d},
+		Contracts: &ContractStore{d},
+		Storage:   &StorageStore{d},
 	}
 }
 

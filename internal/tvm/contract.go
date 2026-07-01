@@ -45,6 +45,17 @@ func create2Address(sender, salt, initCode []byte) []byte {
 	return sha3omit12(sender, salt, crypto.Keccak256(initCode))
 }
 
+// CreateContractAddress derives the address of a contract deployed by a top-level
+// CreateSmartContract transaction: sha3omit12(ownerAddress ++ txID). This is the tx-level
+// analog of the in-VM CREATE derivation (which uses rootTxID ++ nonce). Exported for the
+// actuator that bridges CreateSmartContract into the TVM.
+//
+// TODO(M3.5c): reconcile the exact preimage against java-tron Wallet.generateContractAddress
+// when real deploy transactions are differentially replayed.
+func CreateContractAddress(owner, txID []byte) []byte {
+	return sha3omit12(owner, txID)
+}
+
 // BlockContext supplies the block-scoped values the environment opcodes read. TRON
 // deviations: DIFFICULTY and GASLIMIT always yield 0 (handled in the interpreter).
 type BlockContext struct {

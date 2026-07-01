@@ -171,13 +171,19 @@ func (m *Manager) applyOnTop(node *khaos.KBlock) error {
 // processBlock applies every transaction in a block to state via the actuator registry.
 // It runs inside an already-open revoking session opened by the caller.
 func (m *Manager) processBlock(b *core.Block) error {
+	hdr := b.GetBlockHeader().GetRawData()
+	blk := actuator.BlockContext{
+		Number:    hdr.GetNumber(),
+		Timestamp: hdr.GetTimestamp(),
+		Witness:   hdr.GetWitnessAddress(),
+	}
 	for i, tx := range b.GetTransactions() {
 		if m.lenient {
 			if err := m.provisionReplay(tx); err != nil {
 				return fmt.Errorf("manager: block %d tx %d provision: %w", block.Number(b), i, err)
 			}
 		}
-		if _, err := actuator.Apply(m.state, tx); err != nil {
+		if _, err := actuator.Apply(m.state, tx, blk); err != nil {
 			return fmt.Errorf("manager: block %d tx %d: %w", block.Number(b), i, err)
 		}
 	}
