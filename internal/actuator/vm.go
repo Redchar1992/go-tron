@@ -36,8 +36,10 @@ type Receipt struct {
 //
 // M3.5a deliberately simplifies the parts that need historical resource state or dynamic
 // properties (all deferred to later M3.5 slices, and marked below):
-//   - the caller burns ALL consumed energy as TRX at the floor price (no staked-energy
-//     derivation yet), so origin-pays / free-energy splitting is a no-op here;
+//   - staked-energy derivation is wired (M3.5d, see energy.go), but the dynamic-property
+//     globals it needs (total energy weight / current limit) are not persisted yet, so it
+//     evaluates to 0 and the caller still burns ALL consumed energy as TRX at the floor
+//     price — origin-pays / free-energy splitting stays a no-op until those globals land;
 //   - consume_user_resource_percent for a Trigger is not read back from stored contract
 //     metadata (only runtime code is persisted in M3.5a);
 //   - validation is minimal (unpack only).
@@ -98,8 +100,15 @@ func (a vmActuator) Execute(ctx *Context) error {
 		consumeUserPercent = 100 // deferred (M3.5d): read the stored contract's setting
 	}
 
+	// Derive the caller's currently-available staked energy from stored account state
+	// (see energy.go), replacing the hardcoded 0. While the dynamic-property globals it
+	// needs are unplumbed this evaluates to 0, so the caller still burns all energy as TRX
+	// exactly as before — but the derivation path is now real and unit-tested.
+	callerAcct := lookupAccount(ctx, owner)
+	callerEnergy := availableStakedEnergy(callerAcct, ctx.Block.Timestamp, deferredEnergyDynamicProps)
+
 	ownerBalance := int64(sdb.GetBalance(owner).Uint64())
-	energyLimit := resource.AccountEnergyLimit(0, ownerBalance, callValue,
+	energyLimit := resource.AccountEnergyLimit(callerEnergy, ownerBalance, callValue,
 		ctx.Tx.GetRawData().GetFeeLimit(), defaultEnergyFee)
 	var budget uint64
 	if energyLimit > 0 {
@@ -151,9 +160,14 @@ func (a vmActuator) Execute(ctx *Context) error {
 
 	bill := resource.Bill{
 		EnergyUsed:         int64(res.EnergyUsed),
+		CallerEnergy:       callerEnergy,
+		CallerIsOrigin:     a.create, // a CreateSmartContract's caller IS the contract origin
 		ConsumeUserPercent: consumeUserPercent,
 		OriginEnergyLimit:  originEnergyLimit,
 		EnergyPrice:        defaultEnergyFee,
+		// OriginEnergy for a Trigger (the contract deployer's stake) is deferred together
+		// with the stored-contract metadata — consume_user_resource_percent is likewise
+		// hardcoded 100 above — so the caller currently bears 100%: no origin split to fund.
 	}.Compute()
 	if bill.EnergyFee > 0 {
 		sdb.SubBalance(owner, uint256.NewInt(uint64(bill.EnergyFee)))
