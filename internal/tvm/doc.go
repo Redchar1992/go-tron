@@ -39,10 +39,12 @@
 // the zero value (pre-everything). Mapping committee-proposal state -> these flags is the
 // node's job (M3.5/integration).
 //
-// NOT yet implemented: bn128 add/mul/pairing (0x06-0x08, incl. the Istanbul re-pricing
-// 500/40000 -> 150/6000) + blake2F (0x20009) — need a vetted alt_bn128 curve library;
-// TRON batchValidateSign/validateMultiSign (0x09/0x0a) and the shielded/voting/resource
-// precompiles — need ABI-offset decoding and account-permission state; TRC10 token
-// transfer mechanics. Remaining milestone: differential VM replay + fuzzing (M3.5).
-// M3.0-M3.4 are verified by vector tests; the real-block energy oracle is M3.5.
+// Implemented in M3.5d: bn128 add/mul/pairing (0x06-0x08, incl. the Istanbul re-pricing
+// 500/40000 -> 150/6000) + blake2F (0x20009) via gnark-crypto; TRON batchvalidatesign /
+// validatemultisign (0x09/0x0a, see multisig.go); the shielded-TRC-20 precompile addresses
+// (0x1000001..4) wired behind their default-off gate (see shielded.go — the zk proof
+// verification itself is a deferred Sapling/Groth16 milestone, unreachable while the gate is
+// off). NOT yet implemented: the TVM voting/resource (FreezeV2/vote/reward) precompiles and
+// TRC10 token-transfer mechanics. Remaining milestone: differential VM replay + fuzzing
+// (M3.5e). M3.0-M3.4 are verified by vector tests; the real-block energy oracle is M3.5.
 package tvm

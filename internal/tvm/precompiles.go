@@ -85,6 +85,21 @@ func lookupPrecompile(addr []byte, cfg VMConfig, perm AccountPermissionReader) P
 			return validateMultiSign{perm: perm}
 		}
 	}
+	// Shielded-TRC-20 precompiles: present only when allowShieldedTRC20Transaction is on
+	// (off by default / on mainnet / from-genesis => these are ordinary account calls). The
+	// zk verification is deferred, so the resolved contract fails closed (see shielded.go).
+	if cfg.AllowShieldedTRC20Transaction {
+		switch string(addr) {
+		case string(precompileAddr(0x1000001)):
+			return shieldedDeferred{energy: energyVerifyMintProof}
+		case string(precompileAddr(0x1000002)):
+			return shieldedDeferred{energy: energyVerifyTransferProof}
+		case string(precompileAddr(0x1000003)):
+			return shieldedDeferred{energy: energyVerifyBurnProof}
+		case string(precompileAddr(0x1000004)):
+			return shieldedDeferred{energy: energyMerkleHash}
+		}
+	}
 	return nil
 }
 

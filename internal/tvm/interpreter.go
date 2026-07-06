@@ -45,6 +45,12 @@ type VMConfig struct {
 	AllowSolidity059    bool // ISCONTRACT
 	AllowIstanbul       bool // CHAINID, SELFBALANCE
 	AllowLondon         bool // BASEFEE (not yet implemented)
+
+	// AllowShieldedTRC20Transaction gates the shielded-TRC-20 precompiles (0x1000001..4).
+	// It is proposal #39, DISABLED by default and off on mainnet & a from-genesis chain, so
+	// those addresses are ordinary account calls (not precompiles) — see shielded.go. Not
+	// version-derivable, so VMConfigForVersion leaves it false.
+	AllowShieldedTRC20Transaction bool
 }
 
 // interpreter executes a single contract frame within an EVM.
