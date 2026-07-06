@@ -102,6 +102,20 @@ const (
 	CALLTOKENID    OpCode = 0xd3
 	ISCONTRACT     OpCode = 0xd4
 
+	// 0xd5-0xdf — Stake1.0 (allowTvmFreeze), voting (allowTvmVote), and Stake2.0
+	// (allowTvmFreezeV2) resource operations. Execution is deferred; see staking_ops.go.
+	FREEZE                 OpCode = 0xd5
+	UNFREEZE               OpCode = 0xd6
+	FREEZEEXPIRETIME       OpCode = 0xd7
+	VOTEWITNESS            OpCode = 0xd8
+	WITHDRAWREWARD         OpCode = 0xd9
+	FREEZEBALANCEV2        OpCode = 0xda
+	UNFREEZEBALANCEV2      OpCode = 0xdb
+	CANCELALLUNFREEZEV2    OpCode = 0xdc
+	WITHDRAWEXPIREUNFREEZE OpCode = 0xdd
+	DELEGATERESOURCE       OpCode = 0xde
+	UNDELEGATERESOURCE     OpCode = 0xdf
+
 	// 0xf0 range — call frames, create, and halts.
 	CREATE       OpCode = 0xf0
 	CALL         OpCode = 0xf1

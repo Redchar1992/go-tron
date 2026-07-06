@@ -180,6 +180,27 @@ func buildTable() {
 	gate(CALLTOKENVALUE, transferTrc10)
 	gate(CALLTOKENID, transferTrc10)
 
+	// Staking / voting opcodes (0xd5..0xdf): registered with java-tron's stack arity but a
+	// deferred, fail-closed executor (see staking_ops.go). Each is gated by its proposal
+	// flag; off by default, so on the from-genesis target they fault as invalid.
+	regStaking := func(op OpCode, pop, push int, fn func(VMConfig) bool) {
+		t[op] = &operation{exec: opStakingDeferred, gas: constGas(gasZero), pop: pop, push: push, enabled: fn}
+	}
+	tvmFreeze := func(c VMConfig) bool { return c.AllowTvmFreeze }
+	regStaking(FREEZE, 3, 1, tvmFreeze)
+	regStaking(UNFREEZE, 2, 1, tvmFreeze)
+	regStaking(FREEZEEXPIRETIME, 2, 1, tvmFreeze)
+	tvmVote := func(c VMConfig) bool { return c.AllowTvmVote }
+	regStaking(VOTEWITNESS, 4, 1, tvmVote)
+	regStaking(WITHDRAWREWARD, 0, 1, tvmVote)
+	tvmFreezeV2 := func(c VMConfig) bool { return c.AllowTvmFreezeV2 }
+	regStaking(FREEZEBALANCEV2, 2, 1, tvmFreezeV2)
+	regStaking(UNFREEZEBALANCEV2, 2, 1, tvmFreezeV2)
+	regStaking(CANCELALLUNFREEZEV2, 0, 1, tvmFreezeV2)
+	regStaking(WITHDRAWEXPIREUNFREEZE, 0, 1, tvmFreezeV2)
+	regStaking(DELEGATERESOURCE, 3, 1, tvmFreezeV2)
+	regStaking(UNDELEGATERESOURCE, 3, 1, tvmFreezeV2)
+
 	builtTable = t
 }
 

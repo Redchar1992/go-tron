@@ -51,6 +51,14 @@ type VMConfig struct {
 	// those addresses are ordinary account calls (not precompiles) — see shielded.go. Not
 	// version-derivable, so VMConfigForVersion leaves it false.
 	AllowShieldedTRC20Transaction bool
+
+	// Staking / voting TVM opcode gates (0xd5..0xdf, see staking_ops.go). Each is a
+	// chain-parameter proposal, off by default and on a from-genesis chain (so the opcode
+	// faults as invalid, matching java-tron). Not version-derivable, so VMConfigForVersion
+	// leaves them false; execution is deferred (fail-closed) even when enabled.
+	AllowTvmFreeze   bool // #52, min VERSION_4_2: FREEZE, UNFREEZE, FREEZEEXPIRETIME
+	AllowTvmVote     bool // #59, min VERSION_4_3: VOTEWITNESS, WITHDRAWREWARD
+	AllowTvmFreezeV2 bool // Stake2.0 (supportUnfreezeDelay): FREEZEBALANCEV2..UNDELEGATERESOURCE
 }
 
 // interpreter executes a single contract frame within an EVM.

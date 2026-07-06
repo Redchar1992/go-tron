@@ -44,7 +44,9 @@
 // validatemultisign (0x09/0x0a, see multisig.go); the shielded-TRC-20 precompile addresses
 // (0x1000001..4) wired behind their default-off gate (see shielded.go — the zk proof
 // verification itself is a deferred Sapling/Groth16 milestone, unreachable while the gate is
-// off). NOT yet implemented: the TVM voting/resource (FreezeV2/vote/reward) precompiles and
-// TRC10 token-transfer mechanics. Remaining milestone: differential VM replay + fuzzing
-// (M3.5e). M3.0-M3.4 are verified by vector tests; the real-block energy oracle is M3.5.
+// off); and the staking/voting opcodes (0xd5..0xdf) wired behind their default-off proposal
+// gates (see staking_ops.go — the Stake2.0 write-side + reward/vote state machine is a
+// deferred milestone, so enabled execution fails closed). NOT yet implemented: TRC10
+// token-transfer mechanics. Remaining milestone: differential VM replay + fuzzing (M3.5e).
+// M3.0-M3.4 are verified by vector tests; the real-block energy oracle is M3.5.
 package tvm
