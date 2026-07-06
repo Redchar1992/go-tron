@@ -38,10 +38,10 @@ var genOps = []byte{
 	0xf1, 0xfa, // CALL STATICCALL
 }
 
-// genProgram builds a structured pseudo-random bytecode from rng: a run of opcodes drawn from
-// genOps, interleaved with PUSH1/PUSH32 immediates, ended by STOP/RETURN/REVERT. Stack
-// underflows just fault (deterministically), which is a valid thing to fuzz.
-func genProgram(rng *rand.Rand) []byte {
+// genBody builds a structured pseudo-random opcode run (no terminator) from rng: opcodes
+// drawn from genOps, interleaved with PUSH1/PUSH32 immediates. Stack underflows just fault
+// (deterministically), which is a valid thing to fuzz.
+func genBody(rng *rand.Rand) []byte {
 	n := 8 + rng.Intn(48)
 	code := make([]byte, 0, n*2)
 	for i := 0; i < n; i++ {
@@ -57,15 +57,42 @@ func genProgram(rng *rand.Rand) []byte {
 			code = append(code, genOps[rng.Intn(len(genOps))])
 		}
 	}
+	return code
+}
+
+// terminal picks a random halting sequence.
+func terminal(rng *rand.Rand) []byte {
 	switch rng.Intn(3) {
 	case 0:
-		code = append(code, 0x00) // STOP
+		return []byte{0x00} // STOP
 	case 1:
-		code = append(code, 0x60, 0x20, 0x60, 0x00, 0xf3) // RETURN mem[0:32]
+		return []byte{0x60, 0x20, 0x60, 0x00, 0xf3} // RETURN mem[0:32]
 	default:
-		code = append(code, 0x60, 0x00, 0x60, 0x00, 0xfd) // REVERT
+		return []byte{0x60, 0x00, 0x60, 0x00, 0xfd} // REVERT
 	}
-	return code
+}
+
+// genProgram is a body + terminal — a self-contained contract.
+func genProgram(rng *rand.Rand) []byte {
+	return append(genBody(rng), terminal(rng)...)
+}
+
+// callSeq emits bytecode that CALLs the 21-byte 0x41 address to21 with empty in/out and a
+// large gas cap, then POPs the success flag. Exercises call frames, cross-frame log
+// journaling, and nested-revert rollback.
+func callSeq(to21 []byte) []byte {
+	seq := []byte{
+		0x60, 0x00, // outSize
+		0x60, 0x00, // outOff
+		0x60, 0x00, // inSize
+		0x60, 0x00, // inOff
+		0x60, 0x00, // value
+	}
+	seq = append(seq, 0x73)                   // PUSH20
+	seq = append(seq, to21[1:21]...)          // callee 20-byte body
+	seq = append(seq, 0x62, 0xff, 0xff, 0xff) // PUSH3 gas
+	seq = append(seq, 0xf1, 0x50)             // CALL; POP
+	return seq
 }
 
 // GenCase turns a fuzzer seed into a deterministic (World, Tx): a generated contract driven by
@@ -75,8 +102,13 @@ func GenCase(seed []byte) (World, Tx) {
 	h.Write(seed)
 	rng := rand.New(rand.NewSource(int64(h.Sum64())))
 
-	code := genProgram(rng)
-	owner, contract := genAddr(0x01), genAddr(0x02)
+	owner, aHex, bHex := genAddr(0x01), genAddr(0x02), genAddr(0x03)
+	bAddr, _ := hex.DecodeString(bHex)
+
+	// Contract A CALLs a co-generated callee B, then runs its own body — exercising call
+	// frames, cross-frame log journaling, and nested-revert rollback. B is self-contained.
+	codeA := append(callSeq(bAddr), genProgram(rng)...)
+	codeB := genProgram(rng)
 
 	// Half the cases have staked energy (weight > 0) so the receipt split is exercised;
 	// half burn TRX (weight 0). Fork version drawn from a few representative gates.
@@ -88,6 +120,13 @@ func GenCase(seed []byte) (World, Tx) {
 	version := []int32{8, 19, 23}[rng.Intn(3)]
 	fee := []int64{100, 140, 280, 420}[rng.Intn(4)]
 
+	accB := Account{Code: hex.EncodeToString(codeB)}
+	if rng.Intn(2) == 0 { // sometimes pre-seed a storage slot so SLOAD reads non-zero
+		accB.Storage = map[string]string{
+			hex.EncodeToString([]byte{byte(rng.Intn(4))}): hex.EncodeToString([]byte{byte(1 + rng.Intn(255))}),
+		}
+	}
+
 	w := World{
 		Version: version,
 		DynamicProps: DynamicProps{
@@ -97,10 +136,11 @@ func GenCase(seed []byte) (World, Tx) {
 		},
 		Block: Block{Number: 5_000_000, Timestamp: 1_600_000_000_000, Witness: genAddr(0x09)},
 		Accounts: map[string]Account{
-			owner:    {Balance: 1_000_000_000, EnergyStake: stake},
-			contract: {Code: hex.EncodeToString(code)},
+			owner: {Balance: 1_000_000_000, EnergyStake: stake},
+			aHex:  {Code: hex.EncodeToString(codeA)},
+			bHex:  accB,
 		},
 	}
-	tx := Tx{Type: "TriggerSmartContract", Owner: owner, Contract: contract, FeeLimit: 1_000_000_000}
+	tx := Tx{Type: "TriggerSmartContract", Owner: owner, Contract: aHex, FeeLimit: 1_000_000_000}
 	return w, tx
 }
