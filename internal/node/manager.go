@@ -193,6 +193,7 @@ func (m *Manager) processBlock(b *core.Block) error {
 		Number:    hdr.GetNumber(),
 		Timestamp: hdr.GetTimestamp(),
 		Witness:   hdr.GetWitnessAddress(),
+		Version:   hdr.GetVersion(),
 		Provider:  m.stateProvider,
 	}
 	var receipts []*actuator.Receipt

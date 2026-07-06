@@ -92,7 +92,9 @@ func triggerTx(t *testing.T, owner, contract, data []byte) *core.Transaction {
 func applyInSession(t *testing.T, st *state.State, d *db.Database, tx *core.Transaction, num int64) ApplyResult {
 	t.Helper()
 	d.BuildSession()
-	res, err := Apply(st, tx, BlockContext{Number: num, Timestamp: num * 3000})
+	// Version 35 (tvm.LatestForkVersion) → all fork gates on, matching the modern era
+	// these VM vectors were written for (the prior hardcoded tvm.LatestVMConfig()).
+	res, err := Apply(st, tx, BlockContext{Number: num, Timestamp: num * 3000, Version: 35})
 	if err != nil {
 		d.Revoke()
 		t.Fatalf("apply: %v", err)

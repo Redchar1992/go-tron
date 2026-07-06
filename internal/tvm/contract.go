@@ -63,6 +63,7 @@ type BlockContext struct {
 	Timestamp int64
 	Coinbase  []byte // 20-byte address
 	ChainID   *uint256.Int
+	Version   int32 // block header version; selects the active TVM fork gates (see fork.go)
 }
 
 // Contract is the code-execution frame: the code under execution, its 20-byte address,

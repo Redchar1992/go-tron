@@ -86,3 +86,52 @@ func TestTokenOpsGatedByTransferTrc10(t *testing.T) {
 		t.Fatalf("post CALLTOKENVALUE err = %v", post.Err)
 	}
 }
+
+// Each TVM gate must flip on exactly at its java-tron activation version (ProposalUtil.java
+// forkController.pass(ForkBlockVersionEnum.VERSION_X)); the block just before must not have
+// it. Boundaries: TransferTrc10=6, Constantinople=8, Solidity059=9, Istanbul=19,
+// London/CompatibleEvm=23, HigherCPULimit(=!LegacyMemCost)=24.
+func TestVMConfigForVersion_Boundaries(t *testing.T) {
+	cases := []struct {
+		name    string
+		gate    func(VMConfig) bool
+		off, on int32 // version just before / at activation
+	}{
+		{"AllowTransferTrc10", func(c VMConfig) bool { return c.AllowTransferTrc10 }, 5, 6},
+		{"AllowConstantinople", func(c VMConfig) bool { return c.AllowConstantinople }, 7, 8},
+		{"AllowSolidity059", func(c VMConfig) bool { return c.AllowSolidity059 }, 8, 9},
+		{"AllowIstanbul", func(c VMConfig) bool { return c.AllowIstanbul }, 18, 19},
+		{"AllowLondon", func(c VMConfig) bool { return c.AllowLondon }, 22, 23},
+		{"Forward6364", func(c VMConfig) bool { return c.Forward6364 }, 22, 23},
+		// LegacyMemCost is the INVERSE — legacy (true) pre-24, surcharge (false) at/after 24.
+		{"LegacyMemCost(inverse)", func(c VMConfig) bool { return !c.LegacyMemCost }, 23, 24},
+	}
+	for _, tc := range cases {
+		if tc.gate(VMConfigForVersion(tc.off)) {
+			t.Errorf("%s: enabled at version %d, want off", tc.name, tc.off)
+		}
+		if !tc.gate(VMConfigForVersion(tc.on)) {
+			t.Errorf("%s: not enabled at version %d, want on", tc.name, tc.on)
+		}
+	}
+}
+
+// Version 0 is pre-everything: only the original TRON opcode set.
+func TestVMConfigForVersion_PreEverything(t *testing.T) {
+	c := VMConfigForVersion(0)
+	if c.AllowTransferTrc10 || c.AllowConstantinople || c.AllowSolidity059 ||
+		c.AllowIstanbul || c.AllowLondon || c.Forward6364 {
+		t.Fatalf("version 0 must have no fork gates: %+v", c)
+	}
+	if !c.LegacyMemCost {
+		t.Fatalf("version 0 must use legacy memory cost")
+	}
+}
+
+// At/after the latest modeled fork version the resolver must equal LatestVMConfig, so the
+// existing "modern era" presets/tests keep the same behavior.
+func TestVMConfigForVersion_LatestEqualsPreset(t *testing.T) {
+	if got, want := VMConfigForVersion(LatestForkVersion), LatestVMConfig(); got != want {
+		t.Fatalf("VMConfigForVersion(%d) = %+v, want LatestVMConfig() %+v", LatestForkVersion, got, want)
+	}
+}

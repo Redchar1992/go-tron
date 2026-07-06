@@ -111,6 +111,7 @@ func (a vmActuator) Execute(ctx *Context) error {
 		Timestamp: ctx.Block.Timestamp,
 		Coinbase:  ctx.Block.Witness,
 		ChainID:   mainnetChainID.Clone(),
+		Version:   ctx.Block.Version,
 	}
 	value := uint256.NewInt(uint64(callValue))
 
@@ -126,7 +127,9 @@ func (a vmActuator) Execute(ctx *Context) error {
 		sdb.AddBalance(contractAddr, value)
 	}
 
-	evm := tvm.NewEVM(sdb, blockCtx, tvm.LatestVMConfig())
+	// Resolve the TVM fork gates from the block's header version (not the hardcoded
+	// latest preset) so historical blocks replay with the exact gate set they ran under.
+	evm := tvm.NewEVM(sdb, blockCtx, tvm.VMConfigForVersion(blockCtx.Version))
 	evm.SetRootTxID(ctx.TxID)
 	frame := &tvm.Contract{
 		Self:     contractAddr,

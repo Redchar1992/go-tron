@@ -39,6 +39,7 @@ type BlockContext struct {
 	Number    int64
 	Timestamp int64
 	Witness   []byte // 21-byte producer (coinbase) address
+	Version   int32  // block header version; selects the active TVM fork gates
 	Provider  StateProvider
 }
 
