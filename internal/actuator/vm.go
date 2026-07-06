@@ -36,10 +36,12 @@ type Receipt struct {
 //
 // M3.5a deliberately simplifies the parts that need historical resource state or dynamic
 // properties (all deferred to later M3.5 slices, and marked below):
-//   - staked-energy derivation is wired (M3.5d, see energy.go), but the dynamic-property
-//     globals it needs (total energy weight / current limit) are not persisted yet, so it
-//     evaluates to 0 and the caller still burns ALL consumed energy as TRX at the floor
-//     price — origin-pays / free-energy splitting stays a no-op until those globals land;
+//   - staked-energy derivation is wired (M3.5d, see energy.go) and now reads the network
+//     globals from the PropertyStore (total energy weight / current limit). On a
+//     from-genesis chain TOTAL_ENERGY_WEIGHT is still 0 (freeze actuators that grow it are a
+//     later milestone), so the derivation evaluates to 0 and the caller burns ALL consumed
+//     energy as TRX at the floor price — origin-pays / free-energy splitting activates
+//     automatically once the weight becomes positive;
 //   - consume_user_resource_percent for a Trigger is not read back from stored contract
 //     metadata (only runtime code is persisted in M3.5a);
 //   - validation is minimal (unpack only).
@@ -101,11 +103,16 @@ func (a vmActuator) Execute(ctx *Context) error {
 	}
 
 	// Derive the caller's currently-available staked energy from stored account state
-	// (see energy.go), replacing the hardcoded 0. While the dynamic-property globals it
-	// needs are unplumbed this evaluates to 0, so the caller still burns all energy as TRX
-	// exactly as before — but the derivation path is now real and unit-tested.
+	// (see energy.go). The network globals come from the PropertyStore (M3.5d): on a
+	// from-genesis chain TOTAL_ENERGY_WEIGHT is still 0, so this evaluates to 0 and the
+	// caller burns all energy as TRX exactly as before — but the path now reads real,
+	// revocable, genesis-seeded state and goes live untouched once freeze grows the weight.
+	props, err := energyDynamicPropsFromState(ctx.State)
+	if err != nil {
+		return fmt.Errorf("actuator: read energy properties: %w", err)
+	}
 	callerAcct := lookupAccount(ctx, owner)
-	callerEnergy := availableStakedEnergy(callerAcct, ctx.Block.Timestamp, deferredEnergyDynamicProps)
+	callerEnergy := availableStakedEnergy(callerAcct, ctx.Block.Timestamp, props)
 
 	ownerBalance := int64(sdb.GetBalance(owner).Uint64())
 	energyLimit := resource.AccountEnergyLimit(callerEnergy, ownerBalance, callValue,

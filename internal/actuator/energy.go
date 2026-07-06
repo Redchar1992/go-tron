@@ -3,6 +3,7 @@ package actuator
 import (
 	core "github.com/Redchar1992/go-tron/internal/proto/core"
 	"github.com/Redchar1992/go-tron/internal/resource"
+	"github.com/Redchar1992/go-tron/internal/state"
 )
 
 // This file maps stored account + block + dynamic-property state onto the pure
@@ -20,14 +21,12 @@ import (
 const mainnetGenesisTimestampMs int64 = 1529891469000
 
 // energyDynamicProps carries the DynamicPropertiesStore globals the staked-energy
-// derivation reads.
-//
-// DEFERRED (state plumbing): go-tron has no DynamicPropertiesStore yet (see the notes in
-// internal/bandwidth), so these are zero. Zero totalEnergyWeight makes globalEnergyLimit
-// return 0, so every account's available staked energy is 0 — exactly the pre-M3.5d
-// behavior where the caller burns all consumed energy as TRX. When the dynamic-properties
-// milestone lands, populate these from the store; the derivation then returns real staked
-// energy with no change to the call sites below.
+// derivation reads. It is populated from the PropertyStore (energyDynamicPropsFromState);
+// on a from-genesis chain these hold the seeded fresh-chain defaults (weight 0), which makes
+// globalEnergyLimit return 0 so every account's available staked energy is 0 — exactly the
+// pre-M3.5d behavior where the caller burns all consumed energy as TRX. Once freeze actuators
+// grow TOTAL_ENERGY_WEIGHT above 0 the same derivation returns real staked energy with no
+// change to the call sites.
 type energyDynamicProps struct {
 	totalEnergyCurrentLimit int64
 	totalEnergyWeight       int64
@@ -35,9 +34,33 @@ type energyDynamicProps struct {
 	allowNewReward          bool
 }
 
-// deferredEnergyDynamicProps is the zero placeholder used until the DynamicPropertiesStore
-// exists (see the type doc).
-var deferredEnergyDynamicProps = energyDynamicProps{}
+// energyDynamicPropsFromState reads the staked-energy derivation's network globals from the
+// PropertyStore (java-tron DynamicPropertiesStore.getTotalEnergyCurrentLimit /
+// getTotalEnergyWeight / supportUnfreezeDelay / allowNewReward).
+func energyDynamicPropsFromState(st *state.State) (energyDynamicProps, error) {
+	currentLimit, err := st.Properties.TotalEnergyCurrentLimit()
+	if err != nil {
+		return energyDynamicProps{}, err
+	}
+	weight, err := st.Properties.TotalEnergyWeight()
+	if err != nil {
+		return energyDynamicProps{}, err
+	}
+	unfreezeDelay, err := st.Properties.SupportUnfreezeDelay()
+	if err != nil {
+		return energyDynamicProps{}, err
+	}
+	newReward, err := st.Properties.AllowNewReward()
+	if err != nil {
+		return energyDynamicProps{}, err
+	}
+	return energyDynamicProps{
+		totalEnergyCurrentLimit: currentLimit,
+		totalEnergyWeight:       weight,
+		supportUnfreezeDelay:    unfreezeDelay,
+		allowNewReward:          newReward,
+	}, nil
+}
 
 // headSlot converts a block timestamp (ms) to a genesis-relative slot, matching
 // EnergyProcessor.getHeadSlot.

@@ -198,5 +198,13 @@ func (c *Config) Load(st *state.State) error {
 			return err
 		}
 	}
+	// Seed the network-global resource properties java-tron's DynamicPropertiesStore
+	// constructor persists at DB init (fresh-chain, pre-proposal defaults). The staked-energy
+	// derivation reads these; until freeze actuators grow TOTAL_ENERGY_WEIGHT above 0 the
+	// per-account available staked energy stays 0 (callers burn energy as TRX), matching a
+	// java-tron node replayed from genesis with no stake operations yet applied.
+	if err := st.Properties.SeedGenesisDefaults(); err != nil {
+		return fmt.Errorf("genesis: seed resource properties: %w", err)
+	}
 	return nil
 }
