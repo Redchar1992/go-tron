@@ -33,11 +33,13 @@ var marshal = proto.MarshalOptions{Deterministic: true}
 var ErrInsufficientBalance = errors.New("actuator: insufficient balance")
 
 // BlockContext carries the block-scoped values a VM transaction reads (number, timestamp,
-// producing witness). Native (non-VM) actuators ignore it.
+// producing witness) plus the optional historical-state Provider for mid-chain replay
+// (M3.5c; nil for genesis-contiguous replay). Native (non-VM) actuators ignore it.
 type BlockContext struct {
 	Number    int64
 	Timestamp int64
 	Witness   []byte // 21-byte producer (coinbase) address
+	Provider  StateProvider
 }
 
 // Context carries the mutable state stores, the contract under execution, and the

@@ -21,10 +21,27 @@ import (
 //
 // Addresses are the 21-byte 0x41 TRON form the interpreter already produces (wordToAddr /
 // sha3omit12), which is also the node stores' key form — no 20/21-byte remap is needed.
+//
+// For mid-chain replay (M3.5c), a callee's code/storage/balance may predate the replay
+// window and be absent from the node stores; reads then fall through to an optional
+// StateProvider (the historical-state oracle). A nil provider means genesis-contiguous
+// replay, where all state is built by the replay itself.
 type vmStateDB struct {
-	st    *state.State
-	dirty map[string]*vmAccount
-	snaps []map[string]*vmAccount
+	st       *state.State
+	provider StateProvider
+	dirty    map[string]*vmAccount
+	snaps    []map[string]*vmAccount
+}
+
+// StateProvider supplies historical pre-state (balance, code, storage) for accounts that
+// predate a mid-chain replay window — the M3.5c real-block oracle the vmStateDB consults
+// on a node-store miss. All lookups are at the replay's start height (one provider per
+// window). Backed offline by a captured pre-state fixture (replay.MapProvider), or by an
+// archive-node RPC when capturing.
+type StateProvider interface {
+	Balance(addr []byte) (int64, bool)
+	Code(addr []byte) ([]byte, bool)
+	Storage(addr []byte, slot [32]byte) ([32]byte, bool)
 }
 
 // vmAccount is one working-copy account in the dirty layer. Loaded fields (balance, code,
@@ -42,8 +59,8 @@ type vmAccount struct {
 	exists     bool
 }
 
-func newVMStateDB(st *state.State) *vmStateDB {
-	return &vmStateDB{st: st, dirty: make(map[string]*vmAccount)}
+func newVMStateDB(st *state.State, provider StateProvider) *vmStateDB {
+	return &vmStateDB{st: st, provider: provider, dirty: make(map[string]*vmAccount)}
 }
 
 func (a *vmAccount) clone() *vmAccount {
@@ -87,10 +104,20 @@ func (s *vmStateDB) load(addr []byte) *vmAccount {
 	if acct, err := s.st.Accounts.Get(addr); err == nil {
 		a.balance.SetUint64(uint64(acct.GetBalance()))
 		a.exists = true
+	} else if s.provider != nil {
+		if bal, ok := s.provider.Balance(addr); ok {
+			a.balance.SetUint64(uint64(bal))
+			a.exists = true
+		}
 	}
 	if code, err := s.st.Contracts.GetCode(addr); err == nil {
 		a.code = code
 		a.exists = true
+	} else if s.provider != nil {
+		if c, ok := s.provider.Code(addr); ok {
+			a.code = c
+			a.exists = true
+		}
 	}
 	s.dirty[k] = a
 	return a
@@ -170,12 +197,17 @@ func (s *vmStateDB) GetStorage(addr []byte, key [32]byte) ([32]byte, bool) {
 		return [32]byte{}, false
 	}
 	a.loadedSlot[key] = true
-	v, present, err := s.st.Storage.Get(addr, key)
-	if err != nil || !present {
-		return [32]byte{}, false
+	if v, present, err := s.st.Storage.Get(addr, key); err == nil && present {
+		a.storage[key] = v
+		return v, true
 	}
-	a.storage[key] = v
-	return v, true
+	if s.provider != nil {
+		if v, ok := s.provider.Storage(addr, key); ok {
+			a.storage[key] = v
+			return v, true
+		}
+	}
+	return [32]byte{}, false
 }
 
 // SetStorage writes a storage slot into the working copy and marks it for persistence.

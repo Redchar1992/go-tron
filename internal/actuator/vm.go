@@ -68,7 +68,7 @@ func (a vmActuator) Validate(ctx *Context) error {
 }
 
 func (a vmActuator) Execute(ctx *Context) error {
-	sdb := newVMStateDB(ctx.State)
+	sdb := newVMStateDB(ctx.State, ctx.Block.Provider)
 
 	var owner, contractAddr, code, input []byte
 	var callValue, consumeUserPercent, originEnergyLimit int64

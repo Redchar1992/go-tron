@@ -46,12 +46,13 @@ type appliedRef struct {
 
 // Manager drives the block/transaction pipeline over state + db + khaos.
 type Manager struct {
-	db          *db.Database
-	state       *state.State
-	khaos       *khaos.KhaosDB
-	applied     []appliedRef // head branch above the committed base; aligned with db sessions
-	lenient     bool         // replay-provisioning: auto-fund missing TransferContract owners
-	receiptSink func(blockNum int64, receipts []*actuator.Receipt)
+	db            *db.Database
+	state         *state.State
+	khaos         *khaos.KhaosDB
+	applied       []appliedRef // head branch above the committed base; aligned with db sessions
+	lenient       bool         // replay-provisioning: auto-fund missing TransferContract owners
+	receiptSink   func(blockNum int64, receipts []*actuator.Receipt)
+	stateProvider actuator.StateProvider
 }
 
 // NewManager constructs a Manager over the given revoking database. maxFork bounds how
@@ -75,6 +76,12 @@ func (m *Manager) State() *state.State { return m.state }
 func (m *Manager) SetReceiptSink(fn func(blockNum int64, receipts []*actuator.Receipt)) {
 	m.receiptSink = fn
 }
+
+// SetStateProvider registers the historical-state oracle the VM falls through to for
+// accounts/contracts absent from the node stores — the M3.5c dependency for replaying
+// mid-chain contract transactions whose callee state predates the replay window. nil
+// (default) means genesis-contiguous replay, where all state is built by the replay.
+func (m *Manager) SetStateProvider(p actuator.StateProvider) { m.stateProvider = p }
 
 // EnableReplayProvisioning makes processBlock auto-fund TransferContract owners that are
 // missing or underfunded. It is for differential replay starting from a non-genesis
@@ -186,6 +193,7 @@ func (m *Manager) processBlock(b *core.Block) error {
 		Number:    hdr.GetNumber(),
 		Timestamp: hdr.GetTimestamp(),
 		Witness:   hdr.GetWitnessAddress(),
+		Provider:  m.stateProvider,
 	}
 	var receipts []*actuator.Receipt
 	for i, tx := range b.GetTransactions() {

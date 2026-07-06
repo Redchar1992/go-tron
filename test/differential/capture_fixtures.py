@@ -11,6 +11,16 @@ Outputs (test/differential/testdata/):
                 parent linkage, and the linear pipeline.
   spot.json   - individual transaction-bearing blocks, verified for ROOT equivalence only
                 (multi-tx Merkle over real TransferContract/VoteWitnessContract bytes).
+  dense.json  - a contiguous dense pre-TVM span (many txs/block) for the Manager replay.
+  receipts.json - per-tx on-chain receipt (bandwidth + energy fields), used by the
+                bandwidth (M2.5) and energy-receipt (M3.5b) oracles.
+
+M3.5c (real contract replay) additionally needs a prestate.json — the code + storage +
+balances a mid-chain contract execution reads but that predate the replay window
+(loaded via internal/replay.PreState / MapProvider). Capturing it requires an ARCHIVE node
+that serves historical storage at a height (public TronGrid does not); that is the
+make-or-break dependency tracked in docs/m3.5-differential-vm-plan.md and is NOT captured
+here yet.
 
 Usage:  python3 capture_fixtures.py
 """
