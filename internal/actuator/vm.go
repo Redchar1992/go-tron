@@ -147,6 +147,7 @@ func (a vmActuator) Execute(ctx *Context) error {
 	// latest preset) so historical blocks replay with the exact gate set they ran under.
 	evm := tvm.NewEVM(sdb, blockCtx, tvm.VMConfigForVersion(blockCtx.Version))
 	evm.SetRootTxID(ctx.TxID)
+	evm.SetPermissionReader(accountPermissions{ctx.State}) // validatemultisign (0x0a) state source
 	frame := &tvm.Contract{
 		Self:     contractAddr,
 		CodeAddr: contractAddr,

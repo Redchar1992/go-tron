@@ -64,15 +64,26 @@ func precompileAddr(v uint64) []byte {
 }
 
 // lookupPrecompile returns the precompile at addr under the active fork config, or nil.
-// Ungated contracts come from the static map; availability-gated ones are resolved here:
-// blake2F (0x20009) is present only once allowTvmCompatibleEvm activates (cfg.Forward6364),
-// matching java-tron getContractForAddr's VMConfig.allowTvmCompatibleEvm guard.
-func lookupPrecompile(addr []byte, cfg VMConfig) Precompile {
+// Ungated contracts come from the static map; availability-gated ones are resolved here to
+// match java-tron getContractForAddr's per-contract VMConfig guards:
+//   - blake2F (0x20009): present once allowTvmCompatibleEvm activates (cfg.Forward6364).
+//   - batchvalidatesign (0x09) / validatemultisign (0x0a): present once allowTvmSolidity059
+//     activates (cfg.AllowSolidity059). validatemultisign is stateful, so it carries the
+//     account-permission reader (nil for a bare EVM => it returns false).
+func lookupPrecompile(addr []byte, cfg VMConfig, perm AccountPermissionReader) Precompile {
 	if pc := precompiles[string(addr)]; pc != nil {
 		return pc
 	}
 	if cfg.Forward6364 && string(addr) == string(precompileAddr(0x20009)) {
 		return blake2F{}
+	}
+	if cfg.AllowSolidity059 {
+		switch string(addr) {
+		case string(precompileAddr(0x09)):
+			return batchValidateSign{}
+		case string(precompileAddr(0x0a)):
+			return validateMultiSign{perm: perm}
+		}
 	}
 	return nil
 }

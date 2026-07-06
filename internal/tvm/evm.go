@@ -14,7 +14,8 @@ type EVM struct {
 	block    BlockContext
 	cfg      VMConfig
 	depth    int
-	rootTxID []byte // 32-byte root transaction id, used in CREATE address derivation
+	rootTxID []byte                  // 32-byte root transaction id, used in CREATE address derivation
+	perm     AccountPermissionReader // account-permission source for validatemultisign (0x0a); may be nil
 }
 
 // maxCallDepth is the TVM call-stack limit. TRON's MAX_DEPTH is 64 (NOT Ethereum's 1024);
@@ -31,6 +32,10 @@ func (evm *EVM) State() StateDB { return evm.state }
 
 // SetRootTxID sets the 32-byte root transaction id used in CREATE address derivation.
 func (evm *EVM) SetRootTxID(id []byte) { evm.rootTxID = id }
+
+// SetPermissionReader wires the account-permission source the validatemultisign precompile
+// (0x0a) reads. Left unset, 0x0a returns false.
+func (evm *EVM) SetPermissionReader(p AccountPermissionReader) { evm.perm = p }
 
 // call/create energy constants (java-tron EnergyCost).
 const (
@@ -123,7 +128,7 @@ func (evm *EVM) doCall(in *interpreter, sc *scope, kind callKind, to []byte,
 	}
 
 	// Precompiled contract: run natively instead of as bytecode.
-	if pc := lookupPrecompile(to, evm.cfg); pc != nil {
+	if pc := lookupPrecompile(to, evm.cfg, evm.perm); pc != nil {
 		out, used, perr := runPrecompile(pc, child.Input, budget, evm.cfg)
 		in.meter.restore(budget - used)
 		if perr != nil {

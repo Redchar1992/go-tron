@@ -105,10 +105,10 @@ func TestBlake2FMalformed(t *testing.T) {
 // (VMConfig.Forward6364) is active — matching java-tron getContractForAddr.
 func TestBlake2FGating(t *testing.T) {
 	addr := precompileAddr(0x20009)
-	if pc := lookupPrecompile(addr, VMConfig{Forward6364: false}); pc != nil {
+	if pc := lookupPrecompile(addr, VMConfig{Forward6364: false}, nil); pc != nil {
 		t.Fatal("blake2F must be absent before allowTvmCompatibleEvm")
 	}
-	if pc := lookupPrecompile(addr, VMConfig{Forward6364: true}); pc == nil {
+	if pc := lookupPrecompile(addr, VMConfig{Forward6364: true}, nil); pc == nil {
 		t.Fatal("blake2F must be present after allowTvmCompatibleEvm")
 	}
 }
