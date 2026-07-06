@@ -4,9 +4,9 @@ package tvm
 // TVM inherited the EVM opcode space); see java-tron core/vm/Op.java.
 type OpCode byte
 
-// Opcode bytes. Grouped as in the EVM/TVM spec. Only the opcodes implemented in M3.0
-// (compute / stack / memory / storage / flow / push-dup-swap / halt) are given names
-// here; CALL/CREATE/LOG and other call-frame ops arrive in M3.1+.
+// Opcode bytes. Grouped as in the EVM/TVM spec. Covers the compute / stack / memory /
+// storage / flow / push-dup-swap / halt set (M3.0), the call-frame ops CALL/CREATE (M3.1),
+// LOG0..LOG4 (M3.5e), and the gated TRC10 / staking opcodes.
 const (
 	// 0x00 range — stop and arithmetic.
 	STOP       OpCode = 0x00
@@ -94,6 +94,13 @@ const (
 	// 0x90–0x9f — SWAP1..SWAP16.
 	SWAP1  OpCode = 0x90
 	SWAP16 OpCode = 0x9f
+
+	// 0xa0–0xa4 — LOG0..LOG4 (event emission).
+	LOG0 OpCode = 0xa0
+	LOG1 OpCode = 0xa1
+	LOG2 OpCode = 0xa2
+	LOG3 OpCode = 0xa3
+	LOG4 OpCode = 0xa4
 
 	// 0xd0 range — TRON token (TRC10) operations.
 	CALLTOKEN      OpCode = 0xd0

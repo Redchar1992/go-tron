@@ -16,6 +16,7 @@ type EVM struct {
 	depth    int
 	rootTxID []byte                  // 32-byte root transaction id, used in CREATE address derivation
 	perm     AccountPermissionReader // account-permission source for validatemultisign (0x0a); may be nil
+	logs     []*Log                  // LOG0..LOG4 events, journaled to snapshots (reverted frames discard theirs)
 }
 
 // maxCallDepth is the TVM call-stack limit. TRON's MAX_DEPTH is 64 (NOT Ethereum's 1024);
@@ -96,6 +97,7 @@ func (evm *EVM) doCall(in *interpreter, sc *scope, kind callKind, to []byte,
 	}
 
 	snap := evm.state.Snapshot()
+	logMark := len(evm.logs)
 
 	child := &Contract{
 		Origin: sc.contract.Origin,
@@ -133,6 +135,7 @@ func (evm *EVM) doCall(in *interpreter, sc *scope, kind callKind, to []byte,
 		in.meter.restore(budget - used)
 		if perr != nil {
 			evm.state.RevertToSnapshot(snap)
+			evm.logs = evm.logs[:logMark]
 			sc.returnData = nil
 			return sc.stack.push(uint256.Int{})
 		}
@@ -149,6 +152,7 @@ func (evm *EVM) doCall(in *interpreter, sc *scope, kind callKind, to []byte,
 
 	if res.Err != nil || res.Reverted {
 		evm.state.RevertToSnapshot(snap)
+		evm.logs = evm.logs[:logMark]
 		if res.Err != nil {
 			sc.returnData = nil
 		} else {
@@ -189,6 +193,7 @@ func (evm *EVM) doCreate(in *interpreter, sc *scope, value *uint256.Int, initCod
 	in.meter.spend(childGas)
 
 	snap := evm.state.Snapshot()
+	logMark := len(evm.logs)
 	evm.state.CreateAccount(newAddr)
 	if transfersValue {
 		evm.state.SubBalance(sc.contract.Self, value)
@@ -206,6 +211,7 @@ func (evm *EVM) doCreate(in *interpreter, sc *scope, value *uint256.Int, initCod
 
 	if res.Err != nil || res.Reverted {
 		evm.state.RevertToSnapshot(snap)
+		evm.logs = evm.logs[:logMark]
 		in.meter.restore(leftover)
 		if res.Err != nil {
 			sc.returnData = nil
@@ -220,6 +226,7 @@ func (evm *EVM) doCreate(in *interpreter, sc *scope, value *uint256.Int, initCod
 		// Not enough energy to store the returned code: creation fails, all child energy
 		// consumed (no refund).
 		evm.state.RevertToSnapshot(snap)
+		evm.logs = evm.logs[:logMark]
 		sc.returnData = nil
 		return sc.stack.push(uint256.Int{})
 	}

@@ -27,6 +27,7 @@ type Receipt struct {
 	Return          []byte
 	Reverted        bool
 	VMError         string
+	Logs            []*tvm.Log // LOG0..LOG4 events; empty when the top-level frame reverted
 }
 
 // vmActuator executes CreateSmartContract (create=true) and TriggerSmartContract on the
@@ -185,12 +186,19 @@ func (a vmActuator) Execute(ctx *Context) error {
 		return fmt.Errorf("actuator: vm state flush: %w", err)
 	}
 
+	// Harvest event logs only on a non-reverted top-level frame; a reverted tx emits none
+	// (nested-frame reverts already discarded theirs inside the EVM).
+	var logs []*tvm.Log
+	if !reverted {
+		logs = evm.Logs()
+	}
 	ctx.Receipt = &Receipt{
 		Energy:          bill,
 		ContractAddress: contractAddr,
 		Return:          res.Return,
 		Reverted:        reverted,
 		VMError:         errString(res.Err),
+		Logs:            logs,
 	}
 	return nil
 }

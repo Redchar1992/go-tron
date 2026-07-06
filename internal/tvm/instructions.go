@@ -164,6 +164,11 @@ func buildTable() {
 	t[REVERT] = &operation{exec: opRevert, gas: gasReturn, pop: 2, halts: true}
 	t[INVALID] = &operation{exec: opInvalid, gas: constGas(gasZero)}
 
+	// 0xa0..0xa4 — LOG0..LOG4: pop offset+size and n topics (2+n), push nothing (see logs.go).
+	for n := 0; n <= 4; n++ {
+		t[LOG0+OpCode(n)] = &operation{exec: opLog(n), gas: gasLog(n), pop: 2 + n, push: 0}
+	}
+
 	// Hardfork/TIP gates: each opcode below faults as invalid until its flag is set.
 	gate := func(op OpCode, fn func(VMConfig) bool) { t[op].enabled = fn }
 	constantinople := func(c VMConfig) bool { return c.AllowConstantinople }
