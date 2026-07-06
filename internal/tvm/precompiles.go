@@ -3,10 +3,17 @@ package tvm
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"math/big"
 
 	"golang.org/x/crypto/ripemd160" //nolint:staticcheck // RIPEMD-160 is consensus-required
 )
+
+// errPrecompileFailure is the hard-failure returned by a precompile's Run on malformed input
+// (e.g. an off-curve bn128 point or a wrong-length blake2F block). It fails the CALL and, per
+// java-tron Program.callToPrecompiledAddress (refundEnergy(0) on a false result), consumes
+// all forwarded energy — which runPrecompile already does on any Run error.
+var errPrecompileFailure = errors.New("tvm: precompile failure")
 
 // Precompile is a built-in contract executed natively instead of as bytecode. Run returns
 // the output (nil with no error means "valid call, empty result", e.g. ecrecover on a bad
@@ -20,8 +27,17 @@ type Precompile interface {
 	Run(input []byte) ([]byte, error)
 }
 
+// configEnergy is an optional interface for precompiles whose energy cost depends on the
+// active fork (VMConfig) — e.g. the bn128 contracts, repriced by allowTvmIstanbul. When a
+// precompile implements it, runPrecompile prefers requiredEnergyCfg over RequiredEnergy.
+type configEnergy interface {
+	requiredEnergyCfg(input []byte, cfg VMConfig) uint64
+}
+
 // precompiles maps a TRON precompile address (21-byte, 0x41-prefixed) to its contract.
-// Built once; addresses are the standard 0x01..0x05 set plus TRON's multisign contracts.
+// Built once; these are the fork-independent (ungated) contracts: the standard 0x01..0x08
+// set (incl. the alt_bn128 curve ops) plus the EVM-compat RIPEMD-160. Availability-gated
+// contracts (blake2F) are resolved in lookupPrecompile instead.
 var precompiles = func() map[string]Precompile {
 	m := map[string]Precompile{
 		string(precompileAddr(0x01)):    ecrecover{},
@@ -29,7 +45,10 @@ var precompiles = func() map[string]Precompile {
 		string(precompileAddr(0x03)):    tronRipemd160{}, // TRON: sha256(sha256(x)[:20]), NOT RIPEMD-160
 		string(precompileAddr(0x04)):    dataCopy{},
 		string(precompileAddr(0x05)):    bigModExp{},
-		string(precompileAddr(0x20003)): ethRipemd160{}, // EVM-compat: the real RIPEMD-160
+		string(precompileAddr(0x06)):    bn128Add{},       // alt_bn128 G1 addition (EIP-196)
+		string(precompileAddr(0x07)):    bn128ScalarMul{}, // alt_bn128 G1 scalar-mul (EIP-196)
+		string(precompileAddr(0x08)):    bn128Pairing{},   // alt_bn128 pairing check (EIP-197)
+		string(precompileAddr(0x20003)): ethRipemd160{},   // EVM-compat: the real RIPEMD-160
 	}
 	return m
 }()
@@ -44,13 +63,30 @@ func precompileAddr(v uint64) []byte {
 	return a
 }
 
-// lookupPrecompile returns the precompile at addr, or nil.
-func lookupPrecompile(addr []byte) Precompile { return precompiles[string(addr)] }
+// lookupPrecompile returns the precompile at addr under the active fork config, or nil.
+// Ungated contracts come from the static map; availability-gated ones are resolved here:
+// blake2F (0x20009) is present only once allowTvmCompatibleEvm activates (cfg.Forward6364),
+// matching java-tron getContractForAddr's VMConfig.allowTvmCompatibleEvm guard.
+func lookupPrecompile(addr []byte, cfg VMConfig) Precompile {
+	if pc := precompiles[string(addr)]; pc != nil {
+		return pc
+	}
+	if cfg.Forward6364 && string(addr) == string(precompileAddr(0x20009)) {
+		return blake2F{}
+	}
+	return nil
+}
 
 // runPrecompile charges a precompile's energy against budget and runs it. A cost over
-// budget or a Run error consumes the whole forwarded budget and fails the call.
-func runPrecompile(pc Precompile, input []byte, budget uint64) (out []byte, used uint64, err error) {
-	cost := pc.RequiredEnergy(input)
+// budget or a Run error consumes the whole forwarded budget and fails the call. Fork-
+// dependent contracts (bn128) price via configEnergy; the rest use RequiredEnergy.
+func runPrecompile(pc Precompile, input []byte, budget uint64, cfg VMConfig) (out []byte, used uint64, err error) {
+	var cost uint64
+	if ce, ok := pc.(configEnergy); ok {
+		cost = ce.requiredEnergyCfg(input, cfg)
+	} else {
+		cost = pc.RequiredEnergy(input)
+	}
 	if cost > budget {
 		return nil, budget, ErrOutOfEnergy
 	}

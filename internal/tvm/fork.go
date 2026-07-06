@@ -35,8 +35,9 @@ func ConstantinopleVMConfig() VMConfig {
 // not derivable from height); the enum's hardForkTime is only a lower bound.
 //
 // Sources (local java-tron):
-//   version numbers — common/.../config/Parameter.java ForkBlockVersionEnum
-//   feature->version — actuator/.../utils/ProposalUtil.java (forkController.pass(VERSION_X))
+//
+//	version numbers — common/.../config/Parameter.java ForkBlockVersionEnum
+//	feature->version — actuator/.../utils/ProposalUtil.java (forkController.pass(VERSION_X))
 const (
 	verTransferTrc10  = 6  // VERSION_3_2_2   ProposalUtil.java:135 (ALLOW_TVM_TRANSFER_TRC10)
 	verConstantinople = 8  // VERSION_3_6     ProposalUtil.java:203 (ALLOW_TVM_CONSTANTINOPLE)

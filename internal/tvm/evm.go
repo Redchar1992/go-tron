@@ -123,8 +123,8 @@ func (evm *EVM) doCall(in *interpreter, sc *scope, kind callKind, to []byte,
 	}
 
 	// Precompiled contract: run natively instead of as bytecode.
-	if pc := lookupPrecompile(to); pc != nil {
-		out, used, perr := runPrecompile(pc, child.Input, budget)
+	if pc := lookupPrecompile(to, evm.cfg); pc != nil {
+		out, used, perr := runPrecompile(pc, child.Input, budget, evm.cfg)
 		in.meter.restore(budget - used)
 		if perr != nil {
 			evm.state.RevertToSnapshot(snap)
