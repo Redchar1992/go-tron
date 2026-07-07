@@ -81,3 +81,81 @@ func (s *DelegatedResourceIndexStore) Put(idx *core.DelegatedResourceAccountInde
 	}
 	return s.db.Put(nsKey(delegatedIndexPrefix, idx.GetAccount()), b)
 }
+
+// Optimized (ALLOW_DELEGATE_OPTIMIZATION) index layout: one KV per delegation edge instead
+// of a list per account, keyed prefix||a||b with the value carrying the other endpoint +
+// an ordering timestamp. Mirrors DelegatedResourceAccountIndexStore.delegate/unDelegate/
+// convert. Prefix bytes match java-tron (0x01/0x02); V2 edges (0x03/0x04) arrive with the
+// Stake2.0 delegation write-side. Query (prefix scan) is deferred with the RPC layer / db
+// iteration — this is the write side, which is all the actuators need.
+const (
+	idxFromPrefix   = 0x01
+	idxToPrefix     = 0x02
+	idxV2FromPrefix = 0x03
+	idxV2ToPrefix   = 0x04
+)
+
+func edgeKey(prefix byte, a, b []byte) []byte {
+	k := make([]byte, 0, 1+len(a)+len(b))
+	k = append(k, prefix)
+	k = append(k, a...)
+	return append(k, b...)
+}
+
+func (s *DelegatedResourceIndexStore) putEdge(prefix byte, a, b, other []byte, time int64) error {
+	c := &core.DelegatedResourceAccountIndex{Account: other, Timestamp: time}
+	v, err := marshal.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return s.db.Put(nsKey(delegatedIndexPrefix, edgeKey(prefix, a, b)), v)
+}
+
+func (s *DelegatedResourceIndexStore) deleteEdge(prefix byte, a, b []byte) error {
+	return s.db.Delete(nsKey(delegatedIndexPrefix, edgeKey(prefix, a, b)))
+}
+
+// Delegate writes the optimized from->to edges (from-side keyed by 'to' carrying 'to',
+// to-side keyed by 'from' carrying 'from'), both stamped with time.
+func (s *DelegatedResourceIndexStore) Delegate(from, to []byte, time int64) error {
+	if err := s.putEdge(idxFromPrefix, from, to, to, time); err != nil {
+		return err
+	}
+	return s.putEdge(idxToPrefix, to, from, from, time)
+}
+
+// UnDelegate removes the optimized from->to edges.
+func (s *DelegatedResourceIndexStore) UnDelegate(from, to []byte) error {
+	if err := s.deleteEdge(idxFromPrefix, from, to); err != nil {
+		return err
+	}
+	return s.deleteEdge(idxToPrefix, to, from)
+}
+
+// HasEdge reports whether the optimized index edge prefix||a||b is present. Query/test
+// support (the prefix-scan aggregation query is deferred with the RPC layer).
+func (s *DelegatedResourceIndexStore) HasEdge(prefix byte, a, b []byte) bool {
+	ok, _ := s.db.Has(nsKey(delegatedIndexPrefix, edgeKey(prefix, a, b)))
+	return ok
+}
+
+// Convert migrates a legacy (list-form) index entry for addr to the optimized per-edge
+// layout, then deletes it — a no-op if addr was already converted or never delegated. Uses
+// each list index+1 as the ordering timestamp (DelegatedResourceAccountIndexStore.convert).
+func (s *DelegatedResourceIndexStore) Convert(addr []byte) error {
+	idx, err := s.Get(addr)
+	if err != nil {
+		return nil // already converted (no legacy entry) or never delegated
+	}
+	for i, to := range idx.GetToAccounts() {
+		if err := s.Delegate(addr, to, int64(i)+1); err != nil {
+			return err
+		}
+	}
+	for i, from := range idx.GetFromAccounts() {
+		if err := s.Delegate(from, addr, int64(i)+1); err != nil {
+			return err
+		}
+	}
+	return s.db.Delete(nsKey(delegatedIndexPrefix, addr))
+}

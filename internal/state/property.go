@@ -37,6 +37,7 @@ var (
 	propAllowMultiSign             = []byte("ALLOW_MULTI_SIGN")
 	propAllowTvmConstantinople     = []byte("ALLOW_TVM_CONSTANTINOPLE")
 	propAllowTvmSolidity059        = []byte("ALLOW_TVM_SOLIDITY_059")
+	propAllowDelegateOptimization  = []byte("ALLOW_DELEGATE_OPTIMIZATION")
 )
 
 // DefaultTotalEnergyLimit is java-tron's genesis TOTAL_ENERGY_LIMIT — the value the
@@ -117,6 +118,13 @@ func (s *PropertyStore) TotalNetWeight() (int64, error) {
 // is active. Genesis default false.
 func (s *PropertyStore) SupportDR() (bool, error) {
 	v, err := s.getOr(propAllowDelegateResource, 0)
+	return v == 1, err
+}
+
+// SupportAllowDelegateOptimization reports getAllowDelegateOptimization() == 1: the
+// optimized per-edge DelegatedResourceAccountIndex layout is active. Genesis default false.
+func (s *PropertyStore) SupportAllowDelegateOptimization() (bool, error) {
+	v, err := s.getOr(propAllowDelegateOptimization, 0)
 	return v == 1, err
 }
 
@@ -222,6 +230,7 @@ func (s *PropertyStore) SeedGenesisDefaults() error {
 		{propAllowMultiSign, 0},
 		{propAllowTvmConstantinople, 0},
 		{propAllowTvmSolidity059, 0},
+		{propAllowDelegateOptimization, 0},
 	} {
 		if err := s.PutInt64(kv.k, kv.v); err != nil {
 			return err

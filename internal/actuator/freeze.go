@@ -57,6 +57,48 @@ func delegatedForResource(ctx *Context, receiver []byte) (bool, error) {
 	return ctx.State.Properties.SupportDR()
 }
 
+// recordDelegationIndex records the from->to delegation edge, choosing the layout by
+// ALLOW_DELEGATE_OPTIMIZATION: legacy list-form (default) or the optimized per-edge form
+// (which first converts any legacy entries, then delegates stamped with the block time).
+func recordDelegationIndex(ctx *Context, from, to []byte) error {
+	opt, err := ctx.State.Properties.SupportAllowDelegateOptimization()
+	if err != nil {
+		return err
+	}
+	if !opt {
+		return addDelegationIndex(ctx.State, from, to)
+	}
+	if err := ctx.State.DelegatedIndex.Convert(from); err != nil {
+		return err
+	}
+	if err := ctx.State.DelegatedIndex.Convert(to); err != nil {
+		return err
+	}
+	now, err := ctx.State.Properties.LatestBlockHeaderTimestamp()
+	if err != nil {
+		return err
+	}
+	return ctx.State.DelegatedIndex.Delegate(from, to, now)
+}
+
+// dropDelegationIndex removes the from->to delegation edge under the active layout.
+func dropDelegationIndex(ctx *Context, from, to []byte) error {
+	opt, err := ctx.State.Properties.SupportAllowDelegateOptimization()
+	if err != nil {
+		return err
+	}
+	if !opt {
+		return removeDelegationIndex(ctx.State, from, to)
+	}
+	if err := ctx.State.DelegatedIndex.Convert(from); err != nil {
+		return err
+	}
+	if err := ctx.State.DelegatedIndex.Convert(to); err != nil {
+		return err
+	}
+	return ctx.State.DelegatedIndex.UnDelegate(from, to)
+}
+
 // addDelegationIndex records the from->to edge in both accounts' delegation index (the
 // un-optimized DelegatedResourceAccountIndexStore layout; idempotent per edge).
 func addDelegationIndex(st *state.State, from, to []byte) error {
@@ -357,7 +399,7 @@ func (freezeBalanceActuator) delegate(ctx *Context, from, to []byte, isBandwidth
 	if err := st.Delegated.Put(dr); err != nil {
 		return 0, err
 	}
-	if err := addDelegationIndex(st, from, to); err != nil {
+	if err := recordDelegationIndex(ctx, from, to); err != nil {
 		return 0, err
 	}
 
@@ -652,7 +694,7 @@ func (a unfreezeBalanceActuator) executeDelegated(ctx *Context, uc *core.Unfreez
 		if err := st.Delegated.Delete(owner, receiver); err != nil {
 			return err
 		}
-		if err := removeDelegationIndex(st, owner, receiver); err != nil {
+		if err := dropDelegationIndex(ctx, owner, receiver); err != nil {
 			return err
 		}
 	} else if err := st.Delegated.Put(dr); err != nil {

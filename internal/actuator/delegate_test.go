@@ -201,6 +201,46 @@ func TestDelegateIgnoredWhenGateOff(t *testing.T) {
 	}
 }
 
+// TestDelegateOptimizedIndex: with ALLOW_DELEGATE_OPTIMIZATION on, a delegated freeze writes
+// the optimized per-edge index (no legacy list entry), and the unfreeze removes it.
+func TestDelegateOptimizedIndex(t *testing.T) {
+	from, to := addr21(0x29), addr21(0x2c)
+	const t0 = int64(1_600_000_000_000)
+	st, _ := newChainState(t, from, 10_000_000, t0)
+	if err := st.Accounts.Put(&core.Account{Address: to, Type: core.AccountType_Normal}); err != nil {
+		t.Fatal(err)
+	}
+	enableDelegation(t, st)
+	if err := st.Properties.PutInt64([]byte("ALLOW_DELEGATE_OPTIMIZATION"), 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Properties.PutInt64([]byte("ALLOW_MULTI_SIGN"), 1); err != nil {
+		t.Fatal(err)
+	}
+
+	mustApply(t, st, freezeToTx(t, from, to, 5_000_000, 3, core.ResourceCode_ENERGY))
+	// No legacy list-form index entry; the optimized edges exist instead.
+	if _, err := st.DelegatedIndex.Get(from); err == nil {
+		t.Fatal("optimized mode must not write the legacy list index")
+	}
+	if !edgePresent(t, st, 0x01, from, to) || !edgePresent(t, st, 0x02, to, from) {
+		t.Fatal("optimized delegation edges missing after freeze")
+	}
+
+	if err := st.Properties.SaveLatestBlockHeaderTimestamp(t0 + 3*dayMs); err != nil {
+		t.Fatal(err)
+	}
+	mustApply(t, st, unfreezeToTx(t, from, to, core.ResourceCode_ENERGY))
+	if edgePresent(t, st, 0x01, from, to) || edgePresent(t, st, 0x02, to, from) {
+		t.Fatal("optimized edges must be removed after unfreeze")
+	}
+}
+
+func edgePresent(t *testing.T, st *state.State, prefix byte, a, b []byte) bool {
+	t.Helper()
+	return st.DelegatedIndex.HasEdge(prefix, a, b)
+}
+
 // TestDelegateValidation covers the delegated-specific validation branches.
 func TestDelegateValidation(t *testing.T) {
 	from := addr21(0x27)
