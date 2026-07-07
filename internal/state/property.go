@@ -101,6 +101,12 @@ func (s *PropertyStore) SupportUnfreezeDelay() (bool, error) {
 	return d > 0, err
 }
 
+// UnfreezeDelayDays returns UNFREEZE_DELAY_DAYS: the Stake2.0 unfreeze maturation delay in
+// days (getUnfreezeDelayDays). Genesis default 0.
+func (s *PropertyStore) UnfreezeDelayDays() (int64, error) {
+	return s.getOr(propUnfreezeDelayDays, 0)
+}
+
 // AllowNewReward reports getAllowNewReward() == 1, which gates the V1 totalEnergyWeight<=0
 // -> 0 branch in calculateGlobalEnergyLimit. Genesis default false.
 func (s *PropertyStore) AllowNewReward() (bool, error) {
