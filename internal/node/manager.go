@@ -250,6 +250,11 @@ func (m *Manager) provisionReplay(tx *core.Transaction) error {
 				return err
 			}
 			owner, amount = fc.GetOwnerAddress(), fc.GetFrozenBalance()
+		case core.Transaction_Contract_VoteWitnessContract:
+			if err := m.provisionVote(c); err != nil {
+				return err
+			}
+			continue
 		default:
 			continue
 		}
@@ -265,6 +270,33 @@ func (m *Manager) provisionReplay(tx *core.Transaction) error {
 		}
 	}
 	return nil
+}
+
+// provisionVote provisions a VoteWitnessContract's prerequisites for mid-chain replay: the
+// candidate witnesses (so the vote passes the witness-exists check) and the voter's TRON
+// power (set V1 frozen to exactly cover the vote sum). Root verification is unaffected — this
+// only lets the real vote tx apply; the on-chain vote/stake state is not the property tested.
+func (m *Manager) provisionVote(c *core.Transaction_Contract) error {
+	vc := new(core.VoteWitnessContract)
+	if err := c.GetParameter().UnmarshalTo(vc); err != nil {
+		return err
+	}
+	var sum int64
+	for _, v := range vc.GetVotes() {
+		sum += v.GetVoteCount()
+		if has, _ := m.state.Witnesses.Has(v.GetVoteAddress()); !has {
+			if err := m.state.Witnesses.Put(&core.Witness{Address: v.GetVoteAddress()}); err != nil {
+				return err
+			}
+		}
+	}
+	acc, err := m.state.Accounts.Get(vc.GetOwnerAddress())
+	if err != nil {
+		acc = &core.Account{Address: vc.GetOwnerAddress()}
+	}
+	// TRX_PRECISION sun per vote; a single V1 frozen entry covers the required TRON power.
+	acc.Frozen = []*core.Account_Frozen{{FrozenBalance: sum * 1_000_000}}
+	return m.state.Accounts.Put(acc)
 }
 
 // switchFork revokes the old branch's open sessions and re-applies the new (longer)

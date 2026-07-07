@@ -74,6 +74,7 @@ var registry = map[core.Transaction_Contract_ContractType]Actuator{
 	core.Transaction_Contract_WithdrawExpireUnfreezeContract: withdrawExpireUnfreezeActuator{},
 	core.Transaction_Contract_DelegateResourceContract:       delegateResourceActuator{},
 	core.Transaction_Contract_UnDelegateResourceContract:     unDelegateResourceActuator{},
+	core.Transaction_Contract_VoteWitnessContract:            voteWitnessActuator{},
 }
 
 // ApplyResult is the outcome of applying one transaction: the count of unhandled

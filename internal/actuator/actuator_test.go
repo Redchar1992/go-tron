@@ -79,10 +79,11 @@ func TestTransferInsufficientBalance(t *testing.T) {
 
 func TestUnhandledContractIsNoOp(t *testing.T) {
 	st := state.New(db.NewDatabase(db.NewMemKV()))
-	param, _ := anypb.New(&core.VoteWitnessContract{OwnerAddress: []byte{0x41, 1}})
+	// ProposalCreateContract has no actuator yet -> counted as unhandled (no-op).
+	param, _ := anypb.New(&core.ProposalCreateContract{OwnerAddress: []byte{0x41, 1}})
 	tx := &core.Transaction{RawData: &core.TransactionRaw{
 		Contract: []*core.Transaction_Contract{{
-			Type:      core.Transaction_Contract_VoteWitnessContract,
+			Type:      core.Transaction_Contract_ProposalCreateContract,
 			Parameter: param,
 		}},
 	}}

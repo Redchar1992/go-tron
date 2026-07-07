@@ -31,6 +31,7 @@ type State struct {
 	Properties     *PropertyStore
 	Delegated      *DelegatedResourceStore
 	DelegatedIndex *DelegatedResourceIndexStore
+	Votes          *VotesStore
 }
 
 // New builds the store set over the given database.
@@ -44,6 +45,7 @@ func New(d *db.Database) *State {
 		Properties:     &PropertyStore{d},
 		Delegated:      &DelegatedResourceStore{d},
 		DelegatedIndex: &DelegatedResourceIndexStore{d},
+		Votes:          &VotesStore{d},
 	}
 }
 
