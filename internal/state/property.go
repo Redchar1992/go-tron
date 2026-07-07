@@ -39,7 +39,13 @@ var (
 	propAllowTvmSolidity059        = []byte("ALLOW_TVM_SOLIDITY_059")
 	propAllowDelegateOptimization  = []byte("ALLOW_DELEGATE_OPTIMIZATION")
 	propEnergyFee                  = []byte("ENERGY_FEE")
+	propMaintenanceTimeInterval    = []byte("MAINTENANCE_TIME_INTERVAL")
+	propNextMaintenanceTime        = []byte("NEXT_MAINTENANCE_TIME")
 )
+
+// DefaultMaintenanceInterval is java-tron's MAINTENANCE_TIME_INTERVAL default: 6 hours (ms) —
+// the DPoS maintenance/vote-tally cadence.
+const DefaultMaintenanceInterval int64 = 21_600_000
 
 // DefaultTotalEnergyLimit is java-tron's genesis TOTAL_ENERGY_LIMIT — the value the
 // DynamicPropertiesStore constructor persists on a fresh DB, before any on-chain proposal
@@ -187,6 +193,37 @@ func (s *PropertyStore) LatestBlockHeaderTimestamp() (int64, error) {
 // SaveLatestBlockHeaderTimestamp persists the header-timestamp property (ms).
 func (s *PropertyStore) SaveLatestBlockHeaderTimestamp(ms int64) error {
 	return s.PutInt64(propLatestBlockHeaderTimestamp, ms)
+}
+
+// MaintenanceTimeInterval returns MAINTENANCE_TIME_INTERVAL (ms). Genesis default 6h.
+func (s *PropertyStore) MaintenanceTimeInterval() (int64, error) {
+	return s.getOr(propMaintenanceTimeInterval, DefaultMaintenanceInterval)
+}
+
+// NextMaintenanceTime returns NEXT_MAINTENANCE_TIME (ms): the block time at/after which the
+// next maintenance (vote tally) runs.
+func (s *PropertyStore) NextMaintenanceTime() (int64, error) {
+	return s.getOr(propNextMaintenanceTime, 0)
+}
+
+// SaveNextMaintenanceTime persists NEXT_MAINTENANCE_TIME.
+func (s *PropertyStore) SaveNextMaintenanceTime(ms int64) error {
+	return s.PutInt64(propNextMaintenanceTime, ms)
+}
+
+// UpdateNextMaintenanceTime advances NEXT_MAINTENANCE_TIME past blockTime by whole intervals,
+// matching java-tron DynamicPropertiesStore.updateNextMaintenanceTime.
+func (s *PropertyStore) UpdateNextMaintenanceTime(blockTime int64) error {
+	interval, err := s.MaintenanceTimeInterval()
+	if err != nil {
+		return err
+	}
+	cur, err := s.NextMaintenanceTime()
+	if err != nil {
+		return err
+	}
+	round := (blockTime - cur) / interval
+	return s.SaveNextMaintenanceTime(cur + (round+1)*interval)
 }
 
 // addWeight implements DynamicPropertiesStore.addTotalNetWeight/addTotalEnergyWeight: add

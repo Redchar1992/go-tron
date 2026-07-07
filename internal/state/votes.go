@@ -42,3 +42,27 @@ func (s *VotesStore) Put(v *core.Votes) error {
 func (s *VotesStore) Has(owner []byte) (bool, error) {
 	return s.db.Has(nsKey(votesPrefix, owner))
 }
+
+// Delete removes a voter's entry (the maintenance tally clears each after applying it).
+func (s *VotesStore) Delete(owner []byte) error {
+	return s.db.Delete(nsKey(votesPrefix, owner))
+}
+
+// Each calls fn for every Votes entry, in deterministic key order — the maintenance-window
+// tally (Manager.RunMaintenance) enumerates all voters this way.
+func (s *VotesStore) Each(fn func(v *core.Votes) error) error {
+	pairs, err := s.db.Scan(votesPrefix)
+	if err != nil {
+		return err
+	}
+	for _, p := range pairs {
+		v := new(core.Votes)
+		if err := proto.Unmarshal(p.Value, v); err != nil {
+			return err
+		}
+		if err := fn(v); err != nil {
+			return err
+		}
+	}
+	return nil
+}

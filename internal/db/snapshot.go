@@ -1,6 +1,11 @@
 package db
 
-import "sync"
+import (
+	"bytes"
+	"sort"
+	"strings"
+	"sync"
+)
 
 // Database layers a stack of in-memory revoking sessions over a base KV, mirroring
 // java-tron's SnapshotManager / RevokingDatabase.
@@ -83,6 +88,41 @@ func (d *Database) Has(key []byte) (bool, error) {
 		}
 	}
 	return d.base.Has(key)
+}
+
+// Scan returns every visible entry whose key starts with prefix, sorted by key. It merges
+// the base store with the open sessions bottom-up (so an inner session's write or tombstone
+// overrides the base / an outer session), giving the same top-down visibility as Get.
+func (d *Database) Scan(prefix []byte) ([]KVPair, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	merged := map[string][]byte{}
+	base, err := d.base.Scan(prefix)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range base {
+		merged[string(p.Key)] = p.Value
+	}
+	p := string(prefix)
+	for i := 0; i < len(d.sessions); i++ {
+		for k, e := range d.sessions[i].writes {
+			if !strings.HasPrefix(k, p) {
+				continue
+			}
+			if e.deleted {
+				delete(merged, k)
+			} else {
+				merged[k] = e.value
+			}
+		}
+	}
+	out := make([]KVPair, 0, len(merged))
+	for k, v := range merged {
+		out = append(out, KVPair{Key: []byte(k), Value: append([]byte(nil), v...)})
+	}
+	sort.Slice(out, func(i, j int) bool { return bytes.Compare(out[i].Key, out[j].Key) < 0 })
+	return out, nil
 }
 
 // Put writes into the top session, or to base if no session is open.

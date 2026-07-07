@@ -107,6 +107,58 @@ func (m *Manager) Start(root *core.Block) error {
 	if err := m.state.Properties.SaveLatestBlockHeaderTimestamp(ts); err != nil {
 		return fmt.Errorf("manager: seed header timestamp: %w", err)
 	}
+	// Seed NEXT_MAINTENANCE_TIME to the root's timestamp so the first processed block runs a
+	// (typically empty) maintenance and aligns the 6h schedule — java-tron initializes it at
+	// genesis likewise.
+	if err := m.state.Properties.SaveNextMaintenanceTime(ts); err != nil {
+		return fmt.Errorf("manager: seed maintenance time: %w", err)
+	}
+	return nil
+}
+
+// RunMaintenance applies the accumulated votes (VotesStore) to witness vote counts — the DPoS
+// vote tally (java-tron MaintenanceManager.countVote + the witness-count update in
+// doMaintenance): each voter's (new - old) delta is summed per candidate and added to the
+// witness's vote count, then the VotesStore is cleared for the next epoch.
+//
+// DEFERRED (the remaining reward economics): the SR election (sort/elect the active 27 +
+// isJobs), the per-cycle reward accrual (DelegationStore/MortgageService), the GR-power
+// removal. This is the vote TALLY only.
+func (m *Manager) RunMaintenance() error {
+	deltas := map[string]int64{}
+	var voters [][]byte
+	if err := m.state.Votes.Each(func(v *core.Votes) error {
+		for _, ov := range v.GetOldVotes() {
+			deltas[string(ov.GetVoteAddress())] -= ov.GetVoteCount()
+		}
+		for _, nv := range v.GetNewVotes() {
+			deltas[string(nv.GetVoteAddress())] += nv.GetVoteCount()
+		}
+		voters = append(voters, v.GetAddress())
+		return nil
+	}); err != nil {
+		return err
+	}
+	for _, addr := range voters {
+		if err := m.state.Votes.Delete(addr); err != nil {
+			return err
+		}
+	}
+	// Apply deltas per witness. Order-independent (each witness updated once), so the map
+	// iteration does not affect the result.
+	for addrStr, delta := range deltas {
+		if delta == 0 {
+			continue
+		}
+		w, err := m.state.Witnesses.Get([]byte(addrStr))
+		if err != nil {
+			continue // candidate is not (or no longer) a witness — skip, as java-tron does
+		}
+		w.VoteCount += delta
+		if err := m.state.Witnesses.Put(w); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -215,6 +267,22 @@ func (m *Manager) processBlock(b *core.Block) error {
 		}
 		receipts = append(receipts, res.Receipts...)
 	}
+	// DPoS maintenance / vote tally: when this block crosses NEXT_MAINTENANCE_TIME, apply the
+	// accumulated votes to witness counts and advance the schedule — after the block's txs,
+	// before the header-timestamp save (java-tron consensus.applyBlock ordering).
+	next, err := m.state.Properties.NextMaintenanceTime()
+	if err != nil {
+		return fmt.Errorf("manager: block %d next-maintenance: %w", block.Number(b), err)
+	}
+	if hdr.GetTimestamp() >= next {
+		if err := m.RunMaintenance(); err != nil {
+			return fmt.Errorf("manager: block %d maintenance: %w", block.Number(b), err)
+		}
+		if err := m.state.Properties.UpdateNextMaintenanceTime(hdr.GetTimestamp()); err != nil {
+			return fmt.Errorf("manager: block %d update-maintenance: %w", block.Number(b), err)
+		}
+	}
+
 	// Advance LATEST_BLOCK_HEADER_TIMESTAMP only AFTER the block's transactions, mirroring
 	// java-tron Manager.processBlock -> updateDynamicProperties ordering: actuators inside
 	// block N read block N-1's timestamp as "now". Runs inside the block's revoking session,
