@@ -22,6 +22,23 @@ that serves historical storage at a height (public TronGrid does not); that is t
 make-or-break dependency tracked in docs/m3.5-differential-vm-plan.md and is NOT captured
 here yet.
 
+M3.5e (§4.1) additionally needs a chainstate.json — the RESOURCE-accounting snapshot at the
+replay's starting height, loaded via internal/replay.ChainState and applied by
+Manager.SeedChainState so the staked-energy derivation matches the on-chain energy receipts.
+Schema (all sun; a zero field keeps the genesis default):
+  { "number": <height>,
+    "dynamicProps": { "totalEnergyWeight": N, "totalEnergyCurrentLimit": N,
+                      "totalNetWeight": N, "energyFee": 420, "unfreezeDelayDays": 14,
+                      "allowNewReward": 1 },
+    "accounts": { "41<addr>": { "balance": N, "frozenBalanceForEnergy": N,
+                                "frozenV2Energy": N, "acquiredDelegatedEnergy": N,
+                                "acquiredDelegatedV2Energy": N, "energyUsage": N,
+                                "latestConsumeTimeForEnergy": <slot>, "energyWindowSize": N,
+                                "energyWindowOptimized": false } } }
+Its network globals come from getchainparameters / the block's proposals; each account's
+resource state comes from the archive node's account-by-height — the same archive-endpoint
+dependency as prestate.json (NOT captured here yet).
+
 Usage:  python3 capture_fixtures.py
 """
 

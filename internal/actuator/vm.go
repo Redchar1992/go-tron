@@ -13,11 +13,6 @@ import (
 // mainnetChainID is the value the TVM CHAINID opcode returns on TRON mainnet.
 var mainnetChainID = uint256.NewInt(728126428)
 
-// defaultEnergyFee is the sun-per-energy price the bill uses until dynamic-property wiring
-// (energy_fee from the DynamicPropertiesStore) lands in M3.5d. The 100-sun floor is the
-// long-standing mainnet-genesis value.
-const defaultEnergyFee = resource.SunPerEnergyFloor
-
 // Receipt is the outcome of a VM-executed transaction: the energy split (M3.3 Bill) plus
 // the execution result. M3.5b threads these into the differential fixtures; for now they
 // let the pipeline (and tests) observe what the VM did.
@@ -118,12 +113,19 @@ func (a vmActuator) Execute(ctx *Context) error {
 	if err != nil {
 		return fmt.Errorf("actuator: read header timestamp: %w", err)
 	}
+	// Energy price is the dynamic ENERGY_FEE (raw; the 100-sun floor is applied by
+	// resource.EnergyPrice). Unset -> 0 -> floor 100 (from-genesis/mainnet-genesis); seeded
+	// per replay height (M3.5e §4.1) so a real block's burn matches its era's price.
+	energyFee, err := ctx.State.Properties.EnergyFee()
+	if err != nil {
+		return fmt.Errorf("actuator: read energy fee: %w", err)
+	}
 	callerAcct := lookupAccount(ctx, owner)
 	callerEnergy := availableStakedEnergy(callerAcct, nowMs, props)
 
 	ownerBalance := int64(sdb.GetBalance(owner).Uint64())
 	energyLimit := resource.AccountEnergyLimit(callerEnergy, ownerBalance, callValue,
-		ctx.Tx.GetRawData().GetFeeLimit(), defaultEnergyFee)
+		ctx.Tx.GetRawData().GetFeeLimit(), energyFee)
 	var budget uint64
 	if energyLimit > 0 {
 		budget = uint64(energyLimit)
@@ -179,7 +181,7 @@ func (a vmActuator) Execute(ctx *Context) error {
 		CallerIsOrigin:     a.create, // a CreateSmartContract's caller IS the contract origin
 		ConsumeUserPercent: consumeUserPercent,
 		OriginEnergyLimit:  originEnergyLimit,
-		EnergyPrice:        defaultEnergyFee,
+		EnergyPrice:        energyFee,
 		// OriginEnergy for a Trigger (the contract deployer's stake) is deferred together
 		// with the stored-contract metadata — consume_user_resource_percent is likewise
 		// hardcoded 100 above — so the caller currently bears 100%: no origin split to fund.

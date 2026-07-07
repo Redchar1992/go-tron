@@ -38,6 +38,7 @@ var (
 	propAllowTvmConstantinople     = []byte("ALLOW_TVM_CONSTANTINOPLE")
 	propAllowTvmSolidity059        = []byte("ALLOW_TVM_SOLIDITY_059")
 	propAllowDelegateOptimization  = []byte("ALLOW_DELEGATE_OPTIMIZATION")
+	propEnergyFee                  = []byte("ENERGY_FEE")
 )
 
 // DefaultTotalEnergyLimit is java-tron's genesis TOTAL_ENERGY_LIMIT — the value the
@@ -92,6 +93,13 @@ func (s *PropertyStore) TotalEnergyWeight() (int64, error) {
 // Genesis default = TOTAL_ENERGY_LIMIT.
 func (s *PropertyStore) TotalEnergyCurrentLimit() (int64, error) {
 	return s.getOr(propTotalEnergyCurrentLimit, DefaultTotalEnergyLimit)
+}
+
+// EnergyFee returns ENERGY_FEE: the dynamic sun-per-energy price (getEnergyFee). Raw stored
+// value (0 when unset → the 100-sun floor via resource.EnergyPrice); mainnet history is
+// 100→140→280→420. Seeded per replay height (M3.5e §4.1) so a real block's burn matches.
+func (s *PropertyStore) EnergyFee() (int64, error) {
+	return s.getOr(propEnergyFee, 0)
 }
 
 // SupportUnfreezeDelay reports getUnfreezeDelayDays() > 0 — i.e. Stake2.0 is active and the
