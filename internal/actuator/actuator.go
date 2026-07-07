@@ -64,9 +64,11 @@ type Actuator interface {
 // registry maps a ContractType to its actuator. Types absent from the registry are
 // treated as no-ops (see package doc).
 var registry = map[core.Transaction_Contract_ContractType]Actuator{
-	core.Transaction_Contract_TransferContract:     transferActuator{},
-	core.Transaction_Contract_CreateSmartContract:  vmActuator{create: true},
-	core.Transaction_Contract_TriggerSmartContract: vmActuator{create: false},
+	core.Transaction_Contract_TransferContract:        transferActuator{},
+	core.Transaction_Contract_CreateSmartContract:     vmActuator{create: true},
+	core.Transaction_Contract_TriggerSmartContract:    vmActuator{create: false},
+	core.Transaction_Contract_FreezeBalanceContract:   freezeBalanceActuator{},
+	core.Transaction_Contract_UnfreezeBalanceContract: unfreezeBalanceActuator{},
 }
 
 // ApplyResult is the outcome of applying one transaction: the count of unhandled

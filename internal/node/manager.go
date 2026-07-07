@@ -95,11 +95,17 @@ func (m *Manager) EnableReplayProvisioning() { m.lenient = true }
 func (m *Manager) Head() *khaos.KBlock { return m.khaos.Head() }
 
 // Start seeds KhaosDB with a root block (genesis or a snapshot block) as the head,
-// without touching state. Replay begins from the root's children. Used by the
-// differential harness, which reconstructs the root block from chain data.
+// without touching account state, and records the root's header timestamp as
+// LATEST_BLOCK_HEADER_TIMESTAMP so the first processed block's transactions read the
+// root's timestamp as "now" — exactly what a java-tron node that had applied the root
+// would report. Replay begins from the root's children.
 func (m *Manager) Start(root *core.Block) error {
 	if err := m.khaos.Start(root); err != nil {
 		return fmt.Errorf("manager: seed khaos: %w", err)
+	}
+	ts := root.GetBlockHeader().GetRawData().GetTimestamp()
+	if err := m.state.Properties.SaveLatestBlockHeaderTimestamp(ts); err != nil {
+		return fmt.Errorf("manager: seed header timestamp: %w", err)
 	}
 	return nil
 }
@@ -209,30 +215,50 @@ func (m *Manager) processBlock(b *core.Block) error {
 		}
 		receipts = append(receipts, res.Receipts...)
 	}
+	// Advance LATEST_BLOCK_HEADER_TIMESTAMP only AFTER the block's transactions, mirroring
+	// java-tron Manager.processBlock -> updateDynamicProperties ordering: actuators inside
+	// block N read block N-1's timestamp as "now". Runs inside the block's revoking session,
+	// so a revoked block rolls the property back too.
+	if err := m.state.Properties.SaveLatestBlockHeaderTimestamp(hdr.GetTimestamp()); err != nil {
+		return fmt.Errorf("manager: block %d header timestamp: %w", block.Number(b), err)
+	}
 	if m.receiptSink != nil && len(receipts) > 0 {
 		m.receiptSink(blk.Number, receipts)
 	}
 	return nil
 }
 
-// provisionReplay tops up TransferContract owners to cover their transfer amount when the
-// Manager runs in replay-provisioning mode (see EnableReplayProvisioning). Writes land in
-// the current open session, so they revoke cleanly with the block.
+// provisionReplay tops up Transfer/FreezeBalance owners to cover their transfer/freeze
+// amount when the Manager runs in replay-provisioning mode (see EnableReplayProvisioning).
+// Writes land in the current open session, so they revoke cleanly with the block.
+// (UnfreezeBalance cannot be provisioned: it carries no amount and needs a pre-existing
+// expired frozen entry — historical mid-span unfreezes would need real prior state.)
 func (m *Manager) provisionReplay(tx *core.Transaction) error {
 	for _, c := range tx.GetRawData().GetContract() {
-		if c.GetType() != core.Transaction_Contract_TransferContract {
+		var owner []byte
+		var amount int64
+		switch c.GetType() {
+		case core.Transaction_Contract_TransferContract:
+			tc := new(core.TransferContract)
+			if err := c.GetParameter().UnmarshalTo(tc); err != nil {
+				return err
+			}
+			owner, amount = tc.GetOwnerAddress(), tc.GetAmount()
+		case core.Transaction_Contract_FreezeBalanceContract:
+			fc := new(core.FreezeBalanceContract)
+			if err := c.GetParameter().UnmarshalTo(fc); err != nil {
+				return err
+			}
+			owner, amount = fc.GetOwnerAddress(), fc.GetFrozenBalance()
+		default:
 			continue
 		}
-		tc := new(core.TransferContract)
-		if err := c.GetParameter().UnmarshalTo(tc); err != nil {
-			return err
-		}
-		acc, err := m.state.Accounts.Get(tc.GetOwnerAddress())
+		acc, err := m.state.Accounts.Get(owner)
 		if err != nil {
-			acc = &core.Account{Address: tc.GetOwnerAddress()}
+			acc = &core.Account{Address: owner}
 		}
-		if acc.GetBalance() < tc.GetAmount() {
-			acc.Balance = tc.GetAmount()
+		if acc.GetBalance() < amount {
+			acc.Balance = amount
 			if err := m.state.Accounts.Put(acc); err != nil {
 				return err
 			}

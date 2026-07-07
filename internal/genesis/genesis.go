@@ -206,5 +206,11 @@ func (c *Config) Load(st *state.State) error {
 	if err := st.Properties.SeedGenesisDefaults(); err != nil {
 		return fmt.Errorf("genesis: seed resource properties: %w", err)
 	}
+	// java-tron initializes LATEST_BLOCK_HEADER_TIMESTAMP to the genesis timestamp at DB
+	// init; block 1's transactions then read it as "now" (the property is only advanced
+	// AFTER a block's txs are processed — see PropertyStore.LatestBlockHeaderTimestamp).
+	if err := st.Properties.SaveLatestBlockHeaderTimestamp(c.Timestamp); err != nil {
+		return fmt.Errorf("genesis: seed header timestamp: %w", err)
+	}
 	return nil
 }

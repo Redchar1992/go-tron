@@ -24,11 +24,16 @@ type PropertyStore struct{ db *db.Database }
 // (DynamicResourceProperties.* / DynamicProperties.*) so a go-tron property DB is legible
 // against a java-tron one.
 var (
-	propTotalEnergyWeight       = []byte("TOTAL_ENERGY_WEIGHT")
-	propTotalEnergyLimit        = []byte("TOTAL_ENERGY_LIMIT")
-	propTotalEnergyCurrentLimit = []byte("TOTAL_ENERGY_CURRENT_LIMIT")
-	propUnfreezeDelayDays       = []byte("UNFREEZE_DELAY_DAYS")
-	propAllowNewReward          = []byte("ALLOW_NEW_REWARD")
+	propTotalEnergyWeight          = []byte("TOTAL_ENERGY_WEIGHT")
+	propTotalEnergyLimit           = []byte("TOTAL_ENERGY_LIMIT")
+	propTotalEnergyCurrentLimit    = []byte("TOTAL_ENERGY_CURRENT_LIMIT")
+	propTotalNetWeight             = []byte("TOTAL_NET_WEIGHT")
+	propUnfreezeDelayDays          = []byte("UNFREEZE_DELAY_DAYS")
+	propAllowNewReward             = []byte("ALLOW_NEW_REWARD")
+	propAllowDelegateResource      = []byte("ALLOW_DELEGATE_RESOURCE")
+	propMinFrozenTime              = []byte("MIN_FROZEN_TIME")
+	propMaxFrozenTime              = []byte("MAX_FROZEN_TIME")
+	propLatestBlockHeaderTimestamp = []byte("LATEST_BLOCK_HEADER_TIMESTAMP")
 )
 
 // DefaultTotalEnergyLimit is java-tron's genesis TOTAL_ENERGY_LIMIT — the value the
@@ -99,6 +104,73 @@ func (s *PropertyStore) AllowNewReward() (bool, error) {
 	return v == 1, err
 }
 
+// TotalNetWeight returns TOTAL_NET_WEIGHT: the whole-TRX weight of all bandwidth stake on
+// the network (getTotalNetWeight). Genesis default 0.
+func (s *PropertyStore) TotalNetWeight() (int64, error) {
+	return s.getOr(propTotalNetWeight, 0)
+}
+
+// SupportDR reports getAllowDelegateResource() == 1 — V1 resource delegation (proposal #15)
+// is active. Genesis default false.
+func (s *PropertyStore) SupportDR() (bool, error) {
+	v, err := s.getOr(propAllowDelegateResource, 0)
+	return v == 1, err
+}
+
+// MinFrozenTime / MaxFrozenTime are the V1 freeze duration bounds in days
+// (getMinFrozenTime/getMaxFrozenTime). Genesis default 3/3 — mainnet never changed them.
+func (s *PropertyStore) MinFrozenTime() (int64, error) { return s.getOr(propMinFrozenTime, 3) }
+
+// MaxFrozenTime — see MinFrozenTime.
+func (s *PropertyStore) MaxFrozenTime() (int64, error) { return s.getOr(propMaxFrozenTime, 3) }
+
+// LatestBlockHeaderTimestamp returns LATEST_BLOCK_HEADER_TIMESTAMP (ms): java-tron's
+// getLatestBlockHeaderTimestamp. CONSENSUS-CRITICAL ordering note: java-tron saves it in
+// updateDynamicProperties AFTER a block's transactions are processed, so during block-N
+// execution actuators read block N-1's timestamp as "now" (freeze expire times, unfreeze
+// eligibility, resource-usage slots). The Manager mirrors that ordering. Default 0 when a
+// chain root was never installed (bare unit tests).
+func (s *PropertyStore) LatestBlockHeaderTimestamp() (int64, error) {
+	return s.getOr(propLatestBlockHeaderTimestamp, 0)
+}
+
+// SaveLatestBlockHeaderTimestamp persists the header-timestamp property (ms).
+func (s *PropertyStore) SaveLatestBlockHeaderTimestamp(ms int64) error {
+	return s.PutInt64(propLatestBlockHeaderTimestamp, ms)
+}
+
+// addWeight implements DynamicPropertiesStore.addTotalNetWeight/addTotalEnergyWeight: add
+// amount to the property, clamping at 0 only once allowNewReward is active. A zero amount
+// is a no-op (java-tron early-returns without touching the store).
+func (s *PropertyStore) addWeight(key []byte, amount int64) error {
+	if amount == 0 {
+		return nil
+	}
+	w, err := s.getOr(key, 0)
+	if err != nil {
+		return err
+	}
+	w += amount
+	newReward, err := s.AllowNewReward()
+	if err != nil {
+		return err
+	}
+	if newReward && w < 0 {
+		w = 0
+	}
+	return s.PutInt64(key, w)
+}
+
+// AddTotalNetWeight adds amount (whole TRX, may be negative) to TOTAL_NET_WEIGHT.
+func (s *PropertyStore) AddTotalNetWeight(amount int64) error {
+	return s.addWeight(propTotalNetWeight, amount)
+}
+
+// AddTotalEnergyWeight adds amount (whole TRX, may be negative) to TOTAL_ENERGY_WEIGHT.
+func (s *PropertyStore) AddTotalEnergyWeight(amount int64) error {
+	return s.addWeight(propTotalEnergyWeight, amount)
+}
+
 // SeedGenesisDefaults persists the fresh-chain resource-property defaults java-tron's
 // DynamicPropertiesStore constructor writes at DB init (pre-proposal mainnet config):
 // TOTAL_ENERGY_WEIGHT=0, TOTAL_ENERGY_LIMIT=TOTAL_ENERGY_CURRENT_LIMIT=DefaultTotalEnergyLimit,
@@ -113,8 +185,12 @@ func (s *PropertyStore) SeedGenesisDefaults() error {
 		{propTotalEnergyWeight, 0},
 		{propTotalEnergyLimit, DefaultTotalEnergyLimit},
 		{propTotalEnergyCurrentLimit, DefaultTotalEnergyLimit},
+		{propTotalNetWeight, 0},
 		{propUnfreezeDelayDays, 0},
 		{propAllowNewReward, 0},
+		{propAllowDelegateResource, 0},
+		{propMinFrozenTime, 3},
+		{propMaxFrozenTime, 3},
 	} {
 		if err := s.PutInt64(kv.k, kv.v); err != nil {
 			return err

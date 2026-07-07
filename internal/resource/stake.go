@@ -104,15 +104,18 @@ func globalEnergyLimit(in StakedEnergyInput) int64 {
 	return int64(float64(weight) * (float64(in.TotalEnergyCurrentLimit) / float64(in.TotalEnergyWeight)))
 }
 
-// recoverEnergyUsage decays a stored energy_usage forward from its last-consume slot to
-// now, mirroring ResourceProcessor.recovery -> increase(lastUsage, 0, lastTime, now,
-// windowSize). Time-based recovery: within one window the usage decays linearly; a full
-// window (or more) since the last consume recovers all of it.
-func recoverEnergyUsage(lastUsage, lastSlot, nowSlot, windowSize int64) int64 {
+// IncreaseEnergyUsage mirrors ResourceProcessor.increase(lastUsage, usage, lastTime, now,
+// windowSize): decay the stored usage average forward from its last-consume slot to now
+// (linear within one window, fully recovered past it), add the new consumption's average,
+// and convert back to energy units. It is the write-back arithmetic for
+// EnergyProcessor.useEnergy — the new stored energy_usage after spending `add` staked
+// energy at nowSlot. CONSENSUS-CRITICAL.
+func IncreaseEnergyUsage(lastUsage, add, lastSlot, nowSlot, windowSize int64) int64 {
 	if windowSize <= 0 {
 		windowSize = DefaultEnergyWindow
 	}
 	averageLastUsage := divideCeil(lastUsage*usagePrecision, windowSize)
+	averageAdd := divideCeil(add*usagePrecision, windowSize)
 	if lastSlot != nowSlot {
 		if lastSlot+windowSize > nowSlot {
 			delta := nowSlot - lastSlot
@@ -122,8 +125,14 @@ func recoverEnergyUsage(lastUsage, lastSlot, nowSlot, windowSize int64) int64 {
 			averageLastUsage = 0
 		}
 	}
-	// increase adds averageUsage for the new consumption; here usage=0, so nothing to add.
+	averageLastUsage += averageAdd
 	return averageLastUsage * windowSize / usagePrecision
+}
+
+// recoverEnergyUsage decays a stored energy_usage forward from its last-consume slot to
+// now — increase with nothing added (ResourceProcessor.recovery).
+func recoverEnergyUsage(lastUsage, lastSlot, nowSlot, windowSize int64) int64 {
+	return IncreaseEnergyUsage(lastUsage, 0, lastSlot, nowSlot, windowSize)
 }
 
 // EnergyWindow mirrors AccountCapsule.getWindowSize(ENERGY): the stored per-account window,

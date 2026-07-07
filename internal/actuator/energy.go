@@ -113,3 +113,28 @@ func lookupAccount(ctx *Context, addr []byte) *core.Account {
 	}
 	return a
 }
+
+// chargeCallerEnergy is the write-back half of EnergyProcessor.useEnergy: fold `usage`
+// staked energy into the account's decayed energy_usage average and stamp
+// latest_consume_time_for_energy with the current head slot. Called for every contract tx
+// (a zero usage still stamps the slot, matching java-tron).
+//
+// An account absent from the local store is skipped: such a caller (provider-only, in
+// mid-chain replay) had no locally-visible stake, so its usage is necessarily 0; its real
+// resource state arrives with fixture state seeding (M3.5e §4.1).
+func chargeCallerEnergy(ctx *Context, addr []byte, usage, nowMs int64) error {
+	acct, err := ctx.State.Accounts.Get(addr)
+	if err != nil {
+		return nil
+	}
+	if acct.AccountResource == nil {
+		acct.AccountResource = &core.Account_AccountResource{}
+	}
+	res := acct.AccountResource
+	nowSlot := headSlot(nowMs)
+	res.EnergyUsage = resource.IncreaseEnergyUsage(
+		res.GetEnergyUsage(), usage, res.GetLatestConsumeTimeForEnergy(), nowSlot,
+		resource.EnergyWindow(res.GetEnergyWindowSize(), res.GetEnergyWindowOptimized()))
+	res.LatestConsumeTimeForEnergy = nowSlot
+	return ctx.State.Accounts.Put(acct)
+}

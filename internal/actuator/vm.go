@@ -104,16 +104,22 @@ func (a vmActuator) Execute(ctx *Context) error {
 	}
 
 	// Derive the caller's currently-available staked energy from stored account state
-	// (see energy.go). The network globals come from the PropertyStore (M3.5d): on a
-	// from-genesis chain TOTAL_ENERGY_WEIGHT is still 0, so this evaluates to 0 and the
-	// caller burns all energy as TRX exactly as before — but the path now reads real,
-	// revocable, genesis-seeded state and goes live untouched once freeze grows the weight.
+	// (see energy.go). The network globals come from the PropertyStore; the freeze
+	// actuators (freeze.go) grow TOTAL_ENERGY_WEIGHT and per-account stakes, so on a chain
+	// that has seen FreezeBalanceContract(ENERGY) this is non-zero and the caller pays from
+	// stake before burning TRX. Resource "now" is LATEST_BLOCK_HEADER_TIMESTAMP — the
+	// PREVIOUS block's timestamp during processing (java-tron getLatestBlockHeaderTimestamp
+	// semantics; see PropertyStore) — not this block's header time.
 	props, err := energyDynamicPropsFromState(ctx.State)
 	if err != nil {
 		return fmt.Errorf("actuator: read energy properties: %w", err)
 	}
+	nowMs, err := ctx.State.Properties.LatestBlockHeaderTimestamp()
+	if err != nil {
+		return fmt.Errorf("actuator: read header timestamp: %w", err)
+	}
 	callerAcct := lookupAccount(ctx, owner)
-	callerEnergy := availableStakedEnergy(callerAcct, ctx.Block.Timestamp, props)
+	callerEnergy := availableStakedEnergy(callerAcct, nowMs, props)
 
 	ownerBalance := int64(sdb.GetBalance(owner).Uint64())
 	energyLimit := resource.AccountEnergyLimit(callerEnergy, ownerBalance, callValue,
@@ -184,6 +190,16 @@ func (a vmActuator) Execute(ctx *Context) error {
 
 	if err := sdb.Flush(); err != nil {
 		return fmt.Errorf("actuator: vm state flush: %w", err)
+	}
+
+	// Record the caller's staked-energy consumption (EnergyProcessor.useEnergy): decay-and-
+	// add the usage average and stamp the consume slot, so later transactions see depleted
+	// (and time-recovering) stake instead of an infinite well. java-tron runs this for every
+	// contract tx — including reverted and all-burned ones (usage 0 still stamps the slot).
+	// After Flush so the fee-debited balance is not clobbered. The origin-side write-back is
+	// deferred with the origin-stake metadata (OriginEnergy is always 0 above).
+	if err := chargeCallerEnergy(ctx, owner, bill.EnergyUsage, nowMs); err != nil {
+		return fmt.Errorf("actuator: energy usage write-back: %w", err)
 	}
 
 	// Harvest event logs only on a non-reverted top-level frame; a reverted tx emits none
