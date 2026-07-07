@@ -32,6 +32,7 @@ type State struct {
 	Delegated      *DelegatedResourceStore
 	DelegatedIndex *DelegatedResourceIndexStore
 	Votes          *VotesStore
+	Delegation     *DelegationStore
 }
 
 // New builds the store set over the given database.
@@ -46,6 +47,7 @@ func New(d *db.Database) *State {
 		Delegated:      &DelegatedResourceStore{d},
 		DelegatedIndex: &DelegatedResourceIndexStore{d},
 		Votes:          &VotesStore{d},
+		Delegation:     &DelegationStore{d},
 	}
 }
 
@@ -107,4 +109,23 @@ func (s *WitnessStore) Get(addr []byte) (*core.Witness, error) {
 // Has reports whether addr has a witness.
 func (s *WitnessStore) Has(addr []byte) (bool, error) {
 	return s.db.Has(nsKey(witnessPrefix, addr))
+}
+
+// Each calls fn for every witness in deterministic key order — the maintenance-window Vi
+// accumulation iterates all witnesses this way.
+func (s *WitnessStore) Each(fn func(w *core.Witness) error) error {
+	pairs, err := s.db.Scan(witnessPrefix)
+	if err != nil {
+		return err
+	}
+	for _, p := range pairs {
+		w := new(core.Witness)
+		if err := proto.Unmarshal(p.Value, w); err != nil {
+			return err
+		}
+		if err := fn(w); err != nil {
+			return err
+		}
+	}
+	return nil
 }

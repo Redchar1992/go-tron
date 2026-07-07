@@ -103,8 +103,16 @@ func (a voteWitnessActuator) Execute(ctx *Context) error {
 		return err
 	}
 
-	// java-tron settles pending vote rewards (mortgageService.withdrawReward) here first —
-	// deferred with the reward subsystem (no-op without accrued rewards).
+	// Settle pending vote rewards first (mortgageService.withdrawReward): flush accrued rewards
+	// into the account's allowance before its votes are overwritten. No-op unless
+	// allowChangeDelegation. Re-read the account afterward — WithdrawReward mutates its allowance.
+	if err := WithdrawReward(ctx.State, c.GetOwnerAddress()); err != nil {
+		return err
+	}
+	owner, err = ctx.State.Accounts.Get(c.GetOwnerAddress())
+	if err != nil {
+		return err
+	}
 
 	// The VotesStore entry keeps OLD votes (last maintenance tally). A first-time voter seeds
 	// OldVotes from the account's current votes; then NewVotes is replaced by this cast.

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/Redchar1992/go-tron/internal/db"
 )
@@ -24,24 +25,38 @@ type PropertyStore struct{ db *db.Database }
 // (DynamicResourceProperties.* / DynamicProperties.*) so a go-tron property DB is legible
 // against a java-tron one.
 var (
-	propTotalEnergyWeight          = []byte("TOTAL_ENERGY_WEIGHT")
-	propTotalEnergyLimit           = []byte("TOTAL_ENERGY_LIMIT")
-	propTotalEnergyCurrentLimit    = []byte("TOTAL_ENERGY_CURRENT_LIMIT")
-	propTotalNetWeight             = []byte("TOTAL_NET_WEIGHT")
-	propUnfreezeDelayDays          = []byte("UNFREEZE_DELAY_DAYS")
-	propAllowNewReward             = []byte("ALLOW_NEW_REWARD")
-	propAllowDelegateResource      = []byte("ALLOW_DELEGATE_RESOURCE")
-	propMinFrozenTime              = []byte("MIN_FROZEN_TIME")
-	propMaxFrozenTime              = []byte("MAX_FROZEN_TIME")
-	propLatestBlockHeaderTimestamp = []byte("LATEST_BLOCK_HEADER_TIMESTAMP")
-	propAllowMultiSign             = []byte("ALLOW_MULTI_SIGN")
-	propAllowTvmConstantinople     = []byte("ALLOW_TVM_CONSTANTINOPLE")
-	propAllowTvmSolidity059        = []byte("ALLOW_TVM_SOLIDITY_059")
-	propAllowDelegateOptimization  = []byte("ALLOW_DELEGATE_OPTIMIZATION")
-	propEnergyFee                  = []byte("ENERGY_FEE")
-	propMaintenanceTimeInterval    = []byte("MAINTENANCE_TIME_INTERVAL")
-	propNextMaintenanceTime        = []byte("NEXT_MAINTENANCE_TIME")
+	propTotalEnergyWeight           = []byte("TOTAL_ENERGY_WEIGHT")
+	propTotalEnergyLimit            = []byte("TOTAL_ENERGY_LIMIT")
+	propTotalEnergyCurrentLimit     = []byte("TOTAL_ENERGY_CURRENT_LIMIT")
+	propTotalNetWeight              = []byte("TOTAL_NET_WEIGHT")
+	propUnfreezeDelayDays           = []byte("UNFREEZE_DELAY_DAYS")
+	propAllowNewReward              = []byte("ALLOW_NEW_REWARD")
+	propAllowDelegateResource       = []byte("ALLOW_DELEGATE_RESOURCE")
+	propMinFrozenTime               = []byte("MIN_FROZEN_TIME")
+	propMaxFrozenTime               = []byte("MAX_FROZEN_TIME")
+	propLatestBlockHeaderTimestamp  = []byte("LATEST_BLOCK_HEADER_TIMESTAMP")
+	propAllowMultiSign              = []byte("ALLOW_MULTI_SIGN")
+	propAllowTvmConstantinople      = []byte("ALLOW_TVM_CONSTANTINOPLE")
+	propAllowTvmSolidity059         = []byte("ALLOW_TVM_SOLIDITY_059")
+	propAllowDelegateOptimization   = []byte("ALLOW_DELEGATE_OPTIMIZATION")
+	propEnergyFee                   = []byte("ENERGY_FEE")
+	propMaintenanceTimeInterval     = []byte("MAINTENANCE_TIME_INTERVAL")
+	propNextMaintenanceTime         = []byte("NEXT_MAINTENANCE_TIME")
+	propCurrentCycleNumber          = []byte("CURRENT_CYCLE_NUMBER")
+	propChangeDelegation            = []byte("CHANGE_DELEGATION")
+	propNewRewardAlgoEffectiveCycle = []byte("NEW_REWARD_ALGORITHM_EFFECTIVE_CYCLE")
+	propWitnessPayPerBlock          = []byte("WITNESS_PAY_PER_BLOCK")
+	propWitnessAllowanceFrozenTime  = []byte("WITNESS_ALLOWANCE_FROZEN_TIME")
 )
+
+// DefaultWitnessPayPerBlock is java-tron's genesis WITNESS_PAY_PER_BLOCK: 32 TRX (sun) minted
+// to the block-producing SR each block, split brokerage/voters by the new reward algorithm.
+const DefaultWitnessPayPerBlock int64 = 32_000_000
+
+// NewRewardAlgoDisabled is the NEW_REWARD_ALGORITHM_EFFECTIVE_CYCLE sentinel for "never" —
+// java-tron seeds Long.MAX_VALUE from-genesis, so useNewRewardAlgorithm() is false until a
+// proposal activates it. math.MaxInt64 is byte-identical to Java's Long.MAX_VALUE.
+const NewRewardAlgoDisabled int64 = math.MaxInt64
 
 // DefaultMaintenanceInterval is java-tron's MAINTENANCE_TIME_INTERVAL default: 6 hours (ms) —
 // the DPoS maintenance/vote-tally cadence.
@@ -226,6 +241,63 @@ func (s *PropertyStore) UpdateNextMaintenanceTime(blockTime int64) error {
 	return s.SaveNextMaintenanceTime(cur + (round+1)*interval)
 }
 
+// CurrentCycleNumber returns CURRENT_CYCLE_NUMBER (getCurrentCycleNumber). Genesis default 0.
+// The DPoS reward cycle advances by one each maintenance window while allowChangeDelegation.
+func (s *PropertyStore) CurrentCycleNumber() (int64, error) {
+	return s.getOr(propCurrentCycleNumber, 0)
+}
+
+// SaveCurrentCycleNumber persists CURRENT_CYCLE_NUMBER.
+func (s *PropertyStore) SaveCurrentCycleNumber(n int64) error {
+	return s.PutInt64(propCurrentCycleNumber, n)
+}
+
+// SaveChangeDelegation persists CHANGE_DELEGATION (proposal #34 activation: 1 = on).
+func (s *PropertyStore) SaveChangeDelegation(v int64) error {
+	return s.PutInt64(propChangeDelegation, v)
+}
+
+// SaveNewRewardAlgorithmEffectiveCycle persists NEW_REWARD_ALGORITHM_EFFECTIVE_CYCLE — the cycle
+// from which per-cycle Vi accumulation applies (java-tron sets it on proposal activation).
+func (s *PropertyStore) SaveNewRewardAlgorithmEffectiveCycle(c int64) error {
+	return s.PutInt64(propNewRewardAlgoEffectiveCycle, c)
+}
+
+// AllowChangeDelegation reports getChangeDelegation() == 1 (proposal #34). This is the master
+// gate for the whole Vi-based reward subsystem: while OFF, block rewards are not minted per
+// cycle, cycles do not advance, and WithdrawBalance pays only the pre-accrued allowance.
+// Genesis default false.
+func (s *PropertyStore) AllowChangeDelegation() (bool, error) {
+	v, err := s.getOr(propChangeDelegation, 0)
+	return v == 1, err
+}
+
+// NewRewardAlgorithmEffectiveCycle returns NEW_REWARD_ALGORITHM_EFFECTIVE_CYCLE
+// (getNewRewardAlgorithmEffectiveCycle). Genesis default = NewRewardAlgoDisabled (Long.MAX).
+func (s *PropertyStore) NewRewardAlgorithmEffectiveCycle() (int64, error) {
+	return s.getOr(propNewRewardAlgoEffectiveCycle, NewRewardAlgoDisabled)
+}
+
+// UseNewRewardAlgorithm reports NEW_REWARD_ALGORITHM_EFFECTIVE_CYCLE != Long.MAX
+// (useNewRewardAlgorithm) — whether the per-cycle Vi accumulation runs at maintenance.
+func (s *PropertyStore) UseNewRewardAlgorithm() (bool, error) {
+	c, err := s.NewRewardAlgorithmEffectiveCycle()
+	return c != NewRewardAlgoDisabled, err
+}
+
+// WitnessPayPerBlock returns WITNESS_PAY_PER_BLOCK (getWitnessPayPerBlock). Genesis default
+// 32e6 sun.
+func (s *PropertyStore) WitnessPayPerBlock() (int64, error) {
+	return s.getOr(propWitnessPayPerBlock, DefaultWitnessPayPerBlock)
+}
+
+// WitnessAllowanceFrozenTime returns WITNESS_ALLOWANCE_FROZEN_TIME in days
+// (getWitnessAllowanceFrozenTime): the minimum interval between an account's reward withdrawals.
+// Genesis default 1.
+func (s *PropertyStore) WitnessAllowanceFrozenTime() (int64, error) {
+	return s.getOr(propWitnessAllowanceFrozenTime, 1)
+}
+
 // addWeight implements DynamicPropertiesStore.addTotalNetWeight/addTotalEnergyWeight: add
 // amount to the property, clamping at 0 only once allowNewReward is active. A zero amount
 // is a no-op (java-tron early-returns without touching the store).
@@ -282,6 +354,11 @@ func (s *PropertyStore) SeedGenesisDefaults() error {
 		{propAllowTvmConstantinople, 0},
 		{propAllowTvmSolidity059, 0},
 		{propAllowDelegateOptimization, 0},
+		{propCurrentCycleNumber, 0},
+		{propChangeDelegation, 0},
+		{propNewRewardAlgoEffectiveCycle, NewRewardAlgoDisabled},
+		{propWitnessPayPerBlock, DefaultWitnessPayPerBlock},
+		{propWitnessAllowanceFrozenTime, 1},
 	} {
 		if err := s.PutInt64(kv.k, kv.v); err != nil {
 			return err

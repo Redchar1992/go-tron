@@ -209,6 +209,11 @@ func (a unfreezeBalanceV2Actuator) Execute(ctx *Context) error {
 	if err != nil {
 		return err
 	}
+	// Settle pending vote rewards first (mortgageService.withdrawReward), before the account is
+	// read. No-op unless allowChangeDelegation.
+	if err := WithdrawReward(ctx.State, c.GetOwnerAddress()); err != nil {
+		return err
+	}
 	acct, err := ctx.State.Accounts.Get(c.GetOwnerAddress())
 	if err != nil {
 		return err

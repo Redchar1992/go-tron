@@ -539,6 +539,11 @@ func (a unfreezeBalanceActuator) Execute(ctx *Context) error {
 	if err != nil {
 		return err
 	}
+	// Settle pending vote rewards first (mortgageService.withdrawReward) — before the account is
+	// read, so the fetch below picks up the credited allowance. No-op unless allowChangeDelegation.
+	if err := WithdrawReward(ctx.State, uc.GetOwnerAddress()); err != nil {
+		return err
+	}
 	acct, err := ctx.State.Accounts.Get(uc.GetOwnerAddress())
 	if err != nil {
 		return err
@@ -552,10 +557,6 @@ func (a unfreezeBalanceActuator) Execute(ctx *Context) error {
 	if err != nil {
 		return err
 	}
-
-	// NOTE: java-tron first runs MortgageService.withdrawReward(owner) — the vote-reward
-	// settlement. go-tron has no reward subsystem yet (deferred with the vote/witness-pay
-	// milestone); on a chain with no vote rewards it is a no-op.
 
 	delegated, err := delegatedForResource(ctx, uc.GetReceiverAddress())
 	if err != nil {

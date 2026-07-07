@@ -116,15 +116,41 @@ func (m *Manager) Start(root *core.Block) error {
 	return nil
 }
 
-// RunMaintenance applies the accumulated votes (VotesStore) to witness vote counts — the DPoS
-// vote tally (java-tron MaintenanceManager.countVote + the witness-count update in
-// doMaintenance): each voter's (new - old) delta is summed per candidate and added to the
-// witness's vote count, then the VotesStore is cleared for the next epoch.
+// RunMaintenance runs the DPoS maintenance window (java-tron MaintenanceManager.doMaintenance),
+// in three ordered phases:
 //
-// DEFERRED (the remaining reward economics): the SR election (sort/elect the active 27 +
-// isJobs), the per-cycle reward accrual (DelegationStore/MortgageService), the GR-power
-// removal. This is the vote TALLY only.
+//  1. Vi accumulation — while the new reward algorithm is active, fold each witness's
+//     just-closed-cycle reward pool into its cumulative per-vote index, using the vote counts
+//     as they stood DURING the cycle (i.e. before this window's tally).
+//  2. Vote tally — sum each voter's (new - old) delta per candidate and add it to the witness's
+//     vote count, then clear the VotesStore for the next epoch.
+//  3. Cycle advance — while allowChangeDelegation, bump CURRENT_CYCLE_NUMBER and snapshot each
+//     witness's brokerage + (post-tally) vote count into the new cycle's per-cycle slots.
+//
+// Phases 1 and 3 are dormant from genesis (their gate flags default off), so a from-genesis
+// chain sees only the tally — unchanged behavior. DEFERRED: the SR election (sort/elect the
+// active 27 + isJobs), the standby incentive, and the GR-power removal.
 func (m *Manager) RunMaintenance() error {
+	props := m.state.Properties
+	curCycle, err := props.CurrentCycleNumber()
+	if err != nil {
+		return err
+	}
+
+	// Phase 1: Vi accumulation (before the tally, using this cycle's vote counts).
+	useNew, err := props.UseNewRewardAlgorithm()
+	if err != nil {
+		return err
+	}
+	if useNew {
+		if err := m.state.Witnesses.Each(func(w *core.Witness) error {
+			return m.state.Delegation.AccumulateWitnessVi(curCycle, w.GetAddress(), w.GetVoteCount())
+		}); err != nil {
+			return err
+		}
+	}
+
+	// Phase 2: vote tally.
 	deltas := map[string]int64{}
 	var voters [][]byte
 	if err := m.state.Votes.Each(func(v *core.Votes) error {
@@ -156,6 +182,30 @@ func (m *Manager) RunMaintenance() error {
 		}
 		w.VoteCount += delta
 		if err := m.state.Witnesses.Put(w); err != nil {
+			return err
+		}
+	}
+
+	// Phase 3: cycle advance (after the tally, snapshotting post-tally vote counts).
+	change, err := props.AllowChangeDelegation()
+	if err != nil {
+		return err
+	}
+	if change {
+		nextCycle := curCycle + 1
+		if err := props.SaveCurrentCycleNumber(nextCycle); err != nil {
+			return err
+		}
+		if err := m.state.Witnesses.Each(func(w *core.Witness) error {
+			b, err := m.state.Delegation.GetBrokerage(w.GetAddress())
+			if err != nil {
+				return err
+			}
+			if err := m.state.Delegation.SetBrokerageAt(nextCycle, w.GetAddress(), b); err != nil {
+				return err
+			}
+			return m.state.Delegation.SetWitnessVote(nextCycle, w.GetAddress(), w.GetVoteCount())
+		}); err != nil {
 			return err
 		}
 	}
@@ -266,6 +316,19 @@ func (m *Manager) processBlock(b *core.Block) error {
 			return fmt.Errorf("manager: block %d tx %d: %w", block.Number(b), i, err)
 		}
 		receipts = append(receipts, res.Receipts...)
+	}
+	// Block reward: credit the producing witness's per-block pay into the current cycle's reward
+	// pool (java-tron Manager.payReward(block), run after the block's txs and before maintenance).
+	// No-op unless allowChangeDelegation, so from-genesis replay is unchanged. DEFERRED:
+	// payStandbyWitness (needs the top-127 standby set from SR election) and java-tron's
+	// !allowChangeDelegation branch that credits the producer's allowance directly every block
+	// (needs coinbase-account provisioning + full-state replay, which go-tron does not do yet).
+	pay, err := m.state.Properties.WitnessPayPerBlock()
+	if err != nil {
+		return fmt.Errorf("manager: block %d witness-pay: %w", block.Number(b), err)
+	}
+	if err := actuator.PayBlockReward(m.state, hdr.GetWitnessAddress(), pay); err != nil {
+		return fmt.Errorf("manager: block %d block-reward: %w", block.Number(b), err)
 	}
 	// DPoS maintenance / vote tally: when this block crosses NEXT_MAINTENANCE_TIME, apply the
 	// accumulated votes to witness counts and advance the schedule — after the block's txs,
