@@ -34,6 +34,9 @@ var (
 	propMinFrozenTime              = []byte("MIN_FROZEN_TIME")
 	propMaxFrozenTime              = []byte("MAX_FROZEN_TIME")
 	propLatestBlockHeaderTimestamp = []byte("LATEST_BLOCK_HEADER_TIMESTAMP")
+	propAllowMultiSign             = []byte("ALLOW_MULTI_SIGN")
+	propAllowTvmConstantinople     = []byte("ALLOW_TVM_CONSTANTINOPLE")
+	propAllowTvmSolidity059        = []byte("ALLOW_TVM_SOLIDITY_059")
 )
 
 // DefaultTotalEnergyLimit is java-tron's genesis TOTAL_ENERGY_LIMIT — the value the
@@ -117,6 +120,31 @@ func (s *PropertyStore) SupportDR() (bool, error) {
 	return v == 1, err
 }
 
+// AllowMultiSign reports getAllowMultiSign() == 1 (proposal #16). Genesis default false.
+// Its consensus-relevant side effect here: while OFF, a delegated-ENERGY unfreeze's expiry
+// check reads the BANDWIDTH expire time (DelegatedResourceCapsule.getExpireTimeForEnergy) —
+// a preserved historical bug.
+func (s *PropertyStore) AllowMultiSign() (bool, error) {
+	v, err := s.getOr(propAllowMultiSign, 0)
+	return v == 1, err
+}
+
+// AllowTvmConstantinople reports the ALLOW_TVM_CONSTANTINOPLE chain parameter (#30) as the
+// ACTUATOR-side gate (contract-receiver checks in V1 delegation). Genesis default 0. Note
+// this is the proposal-store view; the TVM's own opcode gating is derived from the block
+// header version (tvm.VMConfigForVersion) — java-tron likewise reads the property here.
+func (s *PropertyStore) AllowTvmConstantinople() (bool, error) {
+	v, err := s.getOr(propAllowTvmConstantinople, 0)
+	return v == 1, err
+}
+
+// AllowTvmSolidity059 reports ALLOW_TVM_SOLIDITY_059 (#32) as the actuator-side gate (the
+// under-acquired clamp in delegated unfreeze). Genesis default 0.
+func (s *PropertyStore) AllowTvmSolidity059() (bool, error) {
+	v, err := s.getOr(propAllowTvmSolidity059, 0)
+	return v == 1, err
+}
+
 // MinFrozenTime / MaxFrozenTime are the V1 freeze duration bounds in days
 // (getMinFrozenTime/getMaxFrozenTime). Genesis default 3/3 — mainnet never changed them.
 func (s *PropertyStore) MinFrozenTime() (int64, error) { return s.getOr(propMinFrozenTime, 3) }
@@ -191,6 +219,9 @@ func (s *PropertyStore) SeedGenesisDefaults() error {
 		{propAllowDelegateResource, 0},
 		{propMinFrozenTime, 3},
 		{propMaxFrozenTime, 3},
+		{propAllowMultiSign, 0},
+		{propAllowTvmConstantinople, 0},
+		{propAllowTvmSolidity059, 0},
 	} {
 		if err := s.PutInt64(kv.k, kv.v); err != nil {
 			return err

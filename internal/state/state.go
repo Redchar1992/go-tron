@@ -23,23 +23,27 @@ var marshal = proto.MarshalOptions{Deterministic: true}
 
 // State aggregates the chain stores over a single revocable database.
 type State struct {
-	DB         *db.Database
-	Accounts   *AccountStore
-	Witnesses  *WitnessStore
-	Contracts  *ContractStore
-	Storage    *StorageStore
-	Properties *PropertyStore
+	DB             *db.Database
+	Accounts       *AccountStore
+	Witnesses      *WitnessStore
+	Contracts      *ContractStore
+	Storage        *StorageStore
+	Properties     *PropertyStore
+	Delegated      *DelegatedResourceStore
+	DelegatedIndex *DelegatedResourceIndexStore
 }
 
 // New builds the store set over the given database.
 func New(d *db.Database) *State {
 	return &State{
-		DB:         d,
-		Accounts:   &AccountStore{d},
-		Witnesses:  &WitnessStore{d},
-		Contracts:  &ContractStore{d},
-		Storage:    &StorageStore{d},
-		Properties: &PropertyStore{d},
+		DB:             d,
+		Accounts:       &AccountStore{d},
+		Witnesses:      &WitnessStore{d},
+		Contracts:      &ContractStore{d},
+		Storage:        &StorageStore{d},
+		Properties:     &PropertyStore{d},
+		Delegated:      &DelegatedResourceStore{d},
+		DelegatedIndex: &DelegatedResourceIndexStore{d},
 	}
 }
 

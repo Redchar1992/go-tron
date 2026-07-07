@@ -1,7 +1,6 @@
 package actuator
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -275,9 +274,5 @@ func TestFreezeErrorsPreserveState(t *testing.T) {
 	}
 	if w, _ := st.Properties.TotalEnergyWeight(); w != 0 {
 		t.Fatalf("weight mutated on rejected freeze: %d", w)
-	}
-	var errCheck error = errDelegateResourceDeferred
-	if !errors.Is(errCheck, errDelegateResourceDeferred) {
-		t.Fatal("sentinel identity")
 	}
 }

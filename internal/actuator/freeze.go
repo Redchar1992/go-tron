@@ -1,11 +1,13 @@
 package actuator
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
 	"github.com/Redchar1992/go-tron/internal/address"
 	core "github.com/Redchar1992/go-tron/internal/proto/core"
+	"github.com/Redchar1992/go-tron/internal/state"
 )
 
 // Stake 1.0 actuators: FreezeBalanceContract / UnfreezeBalanceContract — the resource
@@ -25,11 +27,17 @@ import (
 //     entries, energy unfreeze releases the whole (single) energy stake.
 //   - V1 unfreeze clears the account's votes (AccountCapsule.clearVotes).
 //
+// V1 resource DELEGATION (receiver set + ALLOW_DELEGATE_RESOURCE on) IS implemented: a
+// freeze/unfreeze with a receiver moves the stake into a DelegatedResource(from,to) entry and
+// credits/debits the receiver's acquired-delegated balance, so the receiver's staked energy
+// (getAllFrozenBalanceForEnergy counts acquired-delegated-in) powers ITS contract calls.
+// While ALLOW_DELEGATE_RESOURCE is off (from-genesis default), a set receiver is IGNORED and
+// the tx self-freezes — java-tron's supportDR()==false behavior.
+//
 // DEFERRED (each fails closed / is unreachable from genesis):
-//   - Resource delegation (receiver set + ALLOW_DELEGATE_RESOURCE on): needs the
-//     DelegatedResource store — next slice. The gate defaults 0 and no proposal processing
-//     exists, so on a from-genesis chain a set receiver is IGNORED (self-freeze), exactly
-//     java-tron's supportDR()==false behavior.
+//   - The delegate-optimization index layout (supportAllowDelegateOptimization, proposal-
+//     gated, default off): the un-optimized from/to index lists are maintained; the optimized
+//     timestamp-paged layout arrives with proposal processing.
 //   - TRON_POWER (new-resource-model, proposal-gated, default off): rejected, matching
 //     java-tron with supportAllowNewResourceModel()==false.
 //   - VotesStore bookkeeping + reward withdrawal on unfreeze (MortgageService.withdrawReward):
@@ -41,10 +49,76 @@ const frozenPeriodMs int64 = 86_400_000 // Parameter.ChainConstant.FROZEN_PERIOD
 // measured in whole TRX.
 const trxPrecision int64 = 1_000_000
 
-// errDelegateResourceDeferred fails V1 delegated freezes closed until the DelegatedResource
-// store lands. Unreachable from genesis (ALLOW_DELEGATE_RESOURCE defaults 0).
-var errDelegateResourceDeferred = errors.New(
-	"actuator: V1 resource delegation not implemented (needs the DelegatedResource store)")
+// delegatedForResource reports whether a tx delegates (receiver set AND supportDR on).
+func delegatedForResource(ctx *Context, receiver []byte) (bool, error) {
+	if len(receiver) == 0 {
+		return false, nil
+	}
+	return ctx.State.Properties.SupportDR()
+}
+
+// addDelegationIndex records the from->to edge in both accounts' delegation index (the
+// un-optimized DelegatedResourceAccountIndexStore layout; idempotent per edge).
+func addDelegationIndex(st *state.State, from, to []byte) error {
+	fromIdx, err := st.DelegatedIndex.Get(from)
+	if err != nil {
+		fromIdx = &core.DelegatedResourceAccountIndex{Account: from}
+	}
+	if !containsAddr(fromIdx.GetToAccounts(), to) {
+		fromIdx.ToAccounts = append(fromIdx.ToAccounts, append([]byte(nil), to...))
+		if err := st.DelegatedIndex.Put(fromIdx); err != nil {
+			return err
+		}
+	}
+	toIdx, err := st.DelegatedIndex.Get(to)
+	if err != nil {
+		toIdx = &core.DelegatedResourceAccountIndex{Account: to}
+	}
+	if !containsAddr(toIdx.GetFromAccounts(), from) {
+		toIdx.FromAccounts = append(toIdx.FromAccounts, append([]byte(nil), from...))
+		if err := st.DelegatedIndex.Put(toIdx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeDelegationIndex drops the from->to edge from both accounts' index (called when the
+// (from,to) DelegatedResource entry becomes fully empty).
+func removeDelegationIndex(st *state.State, from, to []byte) error {
+	if fromIdx, err := st.DelegatedIndex.Get(from); err == nil {
+		fromIdx.ToAccounts = removeAddr(fromIdx.GetToAccounts(), to)
+		if err := st.DelegatedIndex.Put(fromIdx); err != nil {
+			return err
+		}
+	}
+	if toIdx, err := st.DelegatedIndex.Get(to); err == nil {
+		toIdx.FromAccounts = removeAddr(toIdx.GetFromAccounts(), from)
+		if err := st.DelegatedIndex.Put(toIdx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func containsAddr(list [][]byte, a []byte) bool {
+	for _, x := range list {
+		if bytes.Equal(x, a) {
+			return true
+		}
+	}
+	return false
+}
+
+func removeAddr(list [][]byte, a []byte) [][]byte {
+	out := list[:0]
+	for _, x := range list {
+		if !bytes.Equal(x, a) {
+			out = append(out, x)
+		}
+	}
+	return out
+}
 
 // freezeBalanceActuator applies FreezeBalanceContract.
 type freezeBalanceActuator struct{}
@@ -70,6 +144,33 @@ func sumFrozen(a *core.Account) int64 {
 // energyFrozen is AccountCapsule.getEnergyFrozenBalance(): the V1 energy stake, in sun.
 func energyFrozen(a *core.Account) int64 {
 	return a.GetAccountResource().GetFrozenBalanceForEnergy().GetFrozenBalance()
+}
+
+// Energy delegated balances live on Account.AccountResource (java-tron AccountCapsule
+// delegates these to the sub-message); bandwidth ones live directly on Account.
+func ensureResource(a *core.Account) {
+	if a.AccountResource == nil {
+		a.AccountResource = &core.Account_AccountResource{}
+	}
+}
+
+func acquiredDelegatedEnergy(a *core.Account) int64 {
+	return a.GetAccountResource().GetAcquiredDelegatedFrozenBalanceForEnergy()
+}
+
+func addAcquiredDelegatedEnergy(a *core.Account, d int64) {
+	ensureResource(a)
+	a.AccountResource.AcquiredDelegatedFrozenBalanceForEnergy += d
+}
+
+func setAcquiredDelegatedEnergy(a *core.Account, v int64) {
+	ensureResource(a)
+	a.AccountResource.AcquiredDelegatedFrozenBalanceForEnergy = v
+}
+
+func addDelegatedEnergy(a *core.Account, d int64) {
+	ensureResource(a)
+	a.AccountResource.DelegatedFrozenBalanceForEnergy += d
 }
 
 func (a freezeBalanceActuator) Validate(ctx *Context) error {
@@ -122,15 +223,29 @@ func (a freezeBalanceActuator) Validate(ctx *Context) error {
 			fc.GetResource())
 	}
 
-	if len(fc.GetReceiverAddress()) > 0 {
-		dr, err := props.SupportDR()
+	delegated, err := delegatedForResource(ctx, fc.GetReceiverAddress())
+	if err != nil {
+		return err
+	}
+	if delegated {
+		receiver := fc.GetReceiverAddress()
+		if bytes.Equal(receiver, fc.GetOwnerAddress()) {
+			return errors.New("actuator: receiverAddress must not be the same as ownerAddress")
+		}
+		if _, err := address.FromBytes(receiver); err != nil {
+			return fmt.Errorf("actuator: invalid receiverAddress: %w", err)
+		}
+		rc, err := ctx.State.Accounts.Get(receiver)
+		if err != nil {
+			return fmt.Errorf("actuator: receiver account [%x] does not exist", receiver)
+		}
+		constantinople, err := props.AllowTvmConstantinople()
 		if err != nil {
 			return err
 		}
-		if dr {
-			return errDelegateResourceDeferred // fail closed until the delegation slice lands
+		if constantinople && rc.GetType() == core.AccountType_Contract {
+			return errors.New("actuator: do not allow delegate resources to contract addresses")
 		}
-		// supportDR off: java-tron ignores the receiver and self-freezes. Fall through.
 	}
 
 	v2, err := props.SupportUnfreezeDelay()
@@ -164,21 +279,33 @@ func (a freezeBalanceActuator) Execute(ctx *Context) error {
 
 	frozenBalance := fc.GetFrozenBalance()
 	expireTime := now + fc.GetFrozenDuration()*frozenPeriodMs
+	isBandwidth := fc.GetResource() == core.ResourceCode_BANDWIDTH
 
-	switch fc.GetResource() {
-	case core.ResourceCode_BANDWIDTH:
-		old := sumFrozen(acct)
-		newTotal := frozenBalance + old
-		// setFrozenForBandwidth: merge into the single V1 entry, expire time of the latest freeze.
-		acct.Frozen = []*core.Account_Frozen{{FrozenBalance: newTotal, ExpireTime: expireTime}}
-		weight := frozenBalance / trxPrecision
-		if newReward {
-			weight = newTotal/trxPrecision - old/trxPrecision
-		}
-		if err := props.AddTotalNetWeight(weight); err != nil {
+	delegated, err := delegatedForResource(ctx, fc.GetReceiverAddress())
+	if err != nil {
+		return err
+	}
+
+	var increment int64 // whole-TRX weight delta the network gains (allowNewReward path)
+	if delegated {
+		increment, err = a.delegate(ctx, fc.GetOwnerAddress(), fc.GetReceiverAddress(),
+			isBandwidth, frozenBalance, expireTime)
+		if err != nil {
 			return err
 		}
-	case core.ResourceCode_ENERGY:
+		// The owner records how much it has delegated OUT (its own stake still counts toward
+		// its weight; the acquired-side credit went to the receiver in delegate()).
+		if isBandwidth {
+			acct.DelegatedFrozenBalanceForBandwidth += frozenBalance
+		} else {
+			addDelegatedEnergy(acct, frozenBalance)
+		}
+	} else if isBandwidth {
+		old := sumFrozen(acct)
+		newTotal := frozenBalance + old
+		acct.Frozen = []*core.Account_Frozen{{FrozenBalance: newTotal, ExpireTime: expireTime}}
+		increment = newTotal/trxPrecision - old/trxPrecision
+	} else {
 		if acct.AccountResource == nil {
 			acct.AccountResource = &core.Account_AccountResource{}
 		}
@@ -187,10 +314,20 @@ func (a freezeBalanceActuator) Execute(ctx *Context) error {
 		acct.AccountResource.FrozenBalanceForEnergy = &core.Account_Frozen{
 			FrozenBalance: newTotal, ExpireTime: expireTime,
 		}
-		weight := frozenBalance / trxPrecision
-		if newReward {
-			weight = newTotal/trxPrecision - old/trxPrecision
+		increment = newTotal/trxPrecision - old/trxPrecision
+	}
+
+	// addTotalWeight: allowNewReward adds the floor-drift-aware increment, else the flat
+	// frozenBalance/TRX_PRECISION.
+	weight := frozenBalance / trxPrecision
+	if newReward {
+		weight = increment
+	}
+	if isBandwidth {
+		if err := props.AddTotalNetWeight(weight); err != nil {
+			return err
 		}
+	} else {
 		if err := props.AddTotalEnergyWeight(weight); err != nil {
 			return err
 		}
@@ -198,6 +335,50 @@ func (a freezeBalanceActuator) Execute(ctx *Context) error {
 
 	acct.Balance -= frozenBalance
 	return ctx.State.Accounts.Put(acct)
+}
+
+// delegate moves `balance` of `from`'s stake into the DelegatedResource(from,to) entry and
+// credits `to`'s acquired-delegated balance (the resource it can now spend). Returns the
+// receiver's whole-TRX acquired-weight increment. Mirrors FreezeBalanceActuator.delegateResource.
+func (freezeBalanceActuator) delegate(ctx *Context, from, to []byte, isBandwidth bool,
+	balance, expireTime int64) (int64, error) {
+	st := ctx.State
+	dr, err := st.Delegated.Get(from, to)
+	if err != nil {
+		dr = &core.DelegatedResource{From: from, To: to}
+	}
+	if isBandwidth {
+		dr.FrozenBalanceForBandwidth += balance
+		dr.ExpireTimeForBandwidth = expireTime
+	} else {
+		dr.FrozenBalanceForEnergy += balance
+		dr.ExpireTimeForEnergy = expireTime
+	}
+	if err := st.Delegated.Put(dr); err != nil {
+		return 0, err
+	}
+	if err := addDelegationIndex(st, from, to); err != nil {
+		return 0, err
+	}
+
+	rc, err := st.Accounts.Get(to)
+	if err != nil {
+		return 0, fmt.Errorf("actuator: receiver account [%x] does not exist", to)
+	}
+	var oldW, newW int64
+	if isBandwidth {
+		oldW = rc.GetAcquiredDelegatedFrozenBalanceForBandwidth() / trxPrecision
+		rc.AcquiredDelegatedFrozenBalanceForBandwidth += balance
+		newW = rc.GetAcquiredDelegatedFrozenBalanceForBandwidth() / trxPrecision
+	} else {
+		oldW = acquiredDelegatedEnergy(rc) / trxPrecision
+		addAcquiredDelegatedEnergy(rc, balance)
+		newW = acquiredDelegatedEnergy(rc) / trxPrecision
+	}
+	if err := st.Accounts.Put(rc); err != nil {
+		return 0, err
+	}
+	return newW - oldW, nil
 }
 
 // unfreezeBalanceActuator applies UnfreezeBalanceContract.
@@ -229,15 +410,12 @@ func (a unfreezeBalanceActuator) Validate(ctx *Context) error {
 		return err
 	}
 
-	if len(uc.GetReceiverAddress()) > 0 {
-		dr, err := props.SupportDR()
-		if err != nil {
-			return err
-		}
-		if dr {
-			return errDelegateResourceDeferred
-		}
-		// supportDR off: receiver ignored, self-unfreeze path (java-tron behavior).
+	delegated, err := delegatedForResource(ctx, uc.GetReceiverAddress())
+	if err != nil {
+		return err
+	}
+	if delegated {
+		return a.validateDelegated(ctx, uc, acct, now)
 	}
 
 	switch uc.GetResource() {
@@ -269,6 +447,51 @@ func (a unfreezeBalanceActuator) Validate(ctx *Context) error {
 	return nil
 }
 
+// validateDelegated checks a delegated (receiver-set) unfreeze: the receiver and the
+// (from,to) entry must exist, the entry must hold a positive balance for the resource, and
+// its expiry must have passed. Mirrors UnfreezeBalanceActuator.validate's delegated branch;
+// the energy expiry read goes through the getExpireTimeForEnergy(multiSign) quirk.
+func (a unfreezeBalanceActuator) validateDelegated(ctx *Context, uc *core.UnfreezeBalanceContract,
+	acct *core.Account, now int64) error {
+	receiver := uc.GetReceiverAddress()
+	if bytes.Equal(receiver, uc.GetOwnerAddress()) {
+		return errors.New("actuator: receiverAddress must not be the same as ownerAddress")
+	}
+	if _, err := address.FromBytes(receiver); err != nil {
+		return fmt.Errorf("actuator: invalid receiverAddress: %w", err)
+	}
+	constantinople, err := ctx.State.Properties.AllowTvmConstantinople()
+	if err != nil {
+		return err
+	}
+	if _, err := ctx.State.Accounts.Get(receiver); err != nil && !constantinople {
+		return fmt.Errorf("actuator: receiver account [%x] does not exist", receiver)
+	}
+	dr, err := ctx.State.Delegated.Get(uc.GetOwnerAddress(), receiver)
+	if err != nil {
+		return errors.New("actuator: delegated Resource does not exist")
+	}
+	switch uc.GetResource() {
+	case core.ResourceCode_BANDWIDTH:
+		if dr.GetFrozenBalanceForBandwidth() <= 0 {
+			return errors.New("actuator: no delegatedFrozenBalance(BANDWIDTH)")
+		}
+		if dr.GetExpireTimeForBandwidth() > now {
+			return errors.New("actuator: it's not time to unfreeze")
+		}
+	case core.ResourceCode_ENERGY:
+		if dr.GetFrozenBalanceForEnergy() <= 0 {
+			return errors.New("actuator: no delegateFrozenBalance(Energy)")
+		}
+		if energyDelegateExpiry(ctx, dr) > now {
+			return errors.New("actuator: it's not time to unfreeze")
+		}
+	default:
+		return errors.New("actuator: ResourceCode error, valid ResourceCode[BANDWIDTH, Energy]")
+	}
+	return nil
+}
+
 func (a unfreezeBalanceActuator) Execute(ctx *Context) error {
 	uc, err := a.unpack(ctx)
 	if err != nil {
@@ -291,6 +514,14 @@ func (a unfreezeBalanceActuator) Execute(ctx *Context) error {
 	// NOTE: java-tron first runs MortgageService.withdrawReward(owner) — the vote-reward
 	// settlement. go-tron has no reward subsystem yet (deferred with the vote/witness-pay
 	// milestone); on a chain with no vote rewards it is a no-op.
+
+	delegated, err := delegatedForResource(ctx, uc.GetReceiverAddress())
+	if err != nil {
+		return err
+	}
+	if delegated {
+		return a.executeDelegated(ctx, uc, acct, newReward)
+	}
 
 	var unfreeze, decrease int64
 	switch uc.GetResource() {
@@ -336,4 +567,111 @@ func (a unfreezeBalanceActuator) Execute(ctx *Context) error {
 	acct.Votes = nil
 
 	return ctx.State.Accounts.Put(acct)
+}
+
+// energyDelegateExpiry is DelegatedResourceCapsule.getExpireTimeForEnergy(dynamicStore): a
+// preserved historical quirk — while ALLOW_MULTI_SIGN is off, the ENERGY delegation's expiry
+// check reads the BANDWIDTH expire-time field.
+func energyDelegateExpiry(ctx *Context, dr *core.DelegatedResource) int64 {
+	multi, err := ctx.State.Properties.AllowMultiSign()
+	if err != nil || !multi {
+		return dr.GetExpireTimeForBandwidth()
+	}
+	return dr.GetExpireTimeForEnergy()
+}
+
+// executeDelegated releases a delegated (receiver-set) stake: zero the (from,to) entry's
+// resource side, debit the owner's delegated-out balance, and debit the receiver's acquired
+// balance (with the solidity059 under-acquired clamp and the constantinople contract-receiver
+// carve-out); the freed TRX returns to the owner's spendable balance. Mirrors
+// UnfreezeBalanceActuator.execute's delegated branch.
+func (a unfreezeBalanceActuator) executeDelegated(ctx *Context, uc *core.UnfreezeBalanceContract,
+	acct *core.Account, newReward bool) error {
+	st := ctx.State
+	owner, receiver := uc.GetOwnerAddress(), uc.GetReceiverAddress()
+	isBandwidth := uc.GetResource() == core.ResourceCode_BANDWIDTH
+
+	dr, err := st.Delegated.Get(owner, receiver)
+	if err != nil {
+		return errors.New("actuator: delegated Resource does not exist")
+	}
+	var unfreeze int64
+	if isBandwidth {
+		unfreeze = dr.GetFrozenBalanceForBandwidth()
+		dr.FrozenBalanceForBandwidth, dr.ExpireTimeForBandwidth = 0, 0
+		acct.DelegatedFrozenBalanceForBandwidth -= unfreeze
+	} else {
+		unfreeze = dr.GetFrozenBalanceForEnergy()
+		dr.FrozenBalanceForEnergy, dr.ExpireTimeForEnergy = 0, 0
+		addDelegatedEnergy(acct, -unfreeze)
+	}
+
+	constantinople, err := st.Properties.AllowTvmConstantinople()
+	if err != nil {
+		return err
+	}
+	solidity059, err := st.Properties.AllowTvmSolidity059()
+	if err != nil {
+		return err
+	}
+	rc, rcErr := st.Accounts.Get(receiver)
+
+	var decrease int64
+	if !constantinople || (rcErr == nil && rc.GetType() != core.AccountType_Contract) {
+		var oldW, newW int64
+		if isBandwidth {
+			oldW = rc.GetAcquiredDelegatedFrozenBalanceForBandwidth() / trxPrecision
+			if solidity059 && rc.GetAcquiredDelegatedFrozenBalanceForBandwidth() < unfreeze {
+				oldW = unfreeze / trxPrecision
+				rc.AcquiredDelegatedFrozenBalanceForBandwidth = 0
+			} else {
+				rc.AcquiredDelegatedFrozenBalanceForBandwidth -= unfreeze
+			}
+			newW = rc.GetAcquiredDelegatedFrozenBalanceForBandwidth() / trxPrecision
+		} else {
+			oldW = acquiredDelegatedEnergy(rc) / trxPrecision
+			if solidity059 && acquiredDelegatedEnergy(rc) < unfreeze {
+				oldW = unfreeze / trxPrecision
+				setAcquiredDelegatedEnergy(rc, 0)
+			} else {
+				addAcquiredDelegatedEnergy(rc, -unfreeze)
+			}
+			newW = acquiredDelegatedEnergy(rc) / trxPrecision
+		}
+		decrease = newW - oldW
+		if err := st.Accounts.Put(rc); err != nil {
+			return err
+		}
+	} else {
+		decrease = -unfreeze / trxPrecision
+	}
+
+	acct.Balance += unfreeze
+
+	if dr.GetFrozenBalanceForBandwidth() == 0 && dr.GetFrozenBalanceForEnergy() == 0 {
+		if err := st.Delegated.Delete(owner, receiver); err != nil {
+			return err
+		}
+		if err := removeDelegationIndex(st, owner, receiver); err != nil {
+			return err
+		}
+	} else if err := st.Delegated.Put(dr); err != nil {
+		return err
+	}
+
+	weight := -unfreeze / trxPrecision
+	if newReward {
+		weight = decrease
+	}
+	if isBandwidth {
+		if err := st.Properties.AddTotalNetWeight(weight); err != nil {
+			return err
+		}
+	} else if err := st.Properties.AddTotalEnergyWeight(weight); err != nil {
+		return err
+	}
+
+	// Delegated unfreeze clears the OWNER's votes too (java-tron clears votes on both paths).
+	acct.Votes = nil
+	return st.Accounts.Put(acct)
 }
