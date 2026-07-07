@@ -56,6 +56,53 @@ func (s *DelegatedResourceStore) Delete(from, to []byte) error {
 	return s.db.Delete(nsKey(delegatedPrefix, DelegatedResourceKey(from, to)))
 }
 
+// V2 delegation keys (DelegatedResourceCapsule.createDbKeyV2): a prefix byte — unlocked 0x01
+// or locked 0x02 — then from||to, so locked and unlocked V2 delegations are distinct entries
+// (and distinct from V1's un-prefixed from||to key).
+const (
+	drV2Prefix     = 0x01
+	drV2LockPrefix = 0x02
+)
+
+func drV2Key(from, to []byte, lock bool) []byte {
+	p := byte(drV2Prefix)
+	if lock {
+		p = drV2LockPrefix
+	}
+	k := make([]byte, 0, 1+len(from)+len(to))
+	k = append(k, p)
+	k = append(k, from...)
+	return append(k, to...)
+}
+
+// GetV2 returns the V2 delegation entry for (from,to) at the lock/unlock namespace, or
+// db.ErrNotFound.
+func (s *DelegatedResourceStore) GetV2(from, to []byte, lock bool) (*core.DelegatedResource, error) {
+	b, err := s.db.Get(nsKey(delegatedPrefix, drV2Key(from, to, lock)))
+	if err != nil {
+		return nil, err
+	}
+	d := new(core.DelegatedResource)
+	if err := proto.Unmarshal(b, d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// PutV2 stores a V2 delegation entry under its from||to at the lock/unlock namespace.
+func (s *DelegatedResourceStore) PutV2(d *core.DelegatedResource, lock bool) error {
+	b, err := marshal.Marshal(d)
+	if err != nil {
+		return err
+	}
+	return s.db.Put(nsKey(delegatedPrefix, drV2Key(d.GetFrom(), d.GetTo(), lock)), b)
+}
+
+// DeleteV2 removes the V2 (from,to) entry at the lock/unlock namespace.
+func (s *DelegatedResourceStore) DeleteV2(from, to []byte, lock bool) error {
+	return s.db.Delete(nsKey(delegatedPrefix, drV2Key(from, to, lock)))
+}
+
 // DelegatedResourceIndexStore persists core.DelegatedResourceAccountIndex keyed by the
 // 21-byte account address.
 type DelegatedResourceIndexStore struct{ db *db.Database }
@@ -130,6 +177,22 @@ func (s *DelegatedResourceIndexStore) UnDelegate(from, to []byte) error {
 		return err
 	}
 	return s.deleteEdge(idxToPrefix, to, from)
+}
+
+// DelegateV2 / UnDelegateV2 maintain the V2 delegation index edges (V2 prefixes 0x03/0x04),
+// which V2 delegation uses unconditionally (DelegatedResourceAccountIndexStore.delegateV2).
+func (s *DelegatedResourceIndexStore) DelegateV2(from, to []byte, time int64) error {
+	if err := s.putEdge(idxV2FromPrefix, from, to, to, time); err != nil {
+		return err
+	}
+	return s.putEdge(idxV2ToPrefix, to, from, from, time)
+}
+
+func (s *DelegatedResourceIndexStore) UnDelegateV2(from, to []byte) error {
+	if err := s.deleteEdge(idxV2FromPrefix, from, to); err != nil {
+		return err
+	}
+	return s.deleteEdge(idxV2ToPrefix, to, from)
 }
 
 // HasEdge reports whether the optimized index edge prefix||a||b is present. Query/test
