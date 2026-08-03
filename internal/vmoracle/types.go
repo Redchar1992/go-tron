@@ -3,7 +3,7 @@
 // schema that BOTH go-tron and the java-tron `jtron-oracle` harness emit, a local executor
 // that runs a fully-specified World+Tx through internal/tvm, and a Diff that classifies the
 // two outcomes. Fixing this schema now pins the JSON wire protocol the Java side must match,
-// and lets the fuzzer (and go-vs-go tests) run before the Java oracle exists.
+// and lets the fuzzer run against both the local engine and the Java oracle.
 //
 // Addresses, code, slots, values, and payloads are lowercase hex (no 0x); TRON addresses are
 // 21-byte 0x41-prefixed, i.e. "41…". Hex at the boundary keeps the schema JSON-clean and
@@ -81,6 +81,8 @@ type Execution struct {
 	EnergyUsed        int64                        `json:"energyUsed"`
 	EnergyFee         int64                        `json:"energyFee"`
 	OriginEnergyUsage int64                        `json:"originEnergyUsage"`
+	FaultPC           int                          `json:"faultPc,omitempty"`
+	FaultOp           string                       `json:"faultOp,omitempty"`
 	StorageWrites     map[string]map[string]string `json:"storageWrites"` // 41-addr -> slot -> value (net delta)
 	Logs              []LogEntry                   `json:"logs"`
 	CreatedAddress    string                       `json:"createdAddress,omitempty"` // hex 41-address (Create success)

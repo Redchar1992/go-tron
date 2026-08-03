@@ -65,7 +65,9 @@ final class OracleExecutor {
     Program program = new Program(code, contract, invoke, internalTransaction);
     program.setRootTransactionId(rootTransactionID(request.tx.txID));
     if (VMConfig.allowTvmCompatibleEvm()) {
-      program.setContractVersion(0);
+      // VMActuator marks deployed contracts as version 1; synthetic World code is deployed
+      // runtime code rather than an init frame.
+      program.setContractVersion(1);
     }
     VM.play(program, OperationRegistry.getTable());
 
@@ -77,6 +79,9 @@ final class OracleExecutor {
     execution.energyUsed = result.getEnergyUsed();
     execution.energyFee = Math.max(0L, result.getEnergyUsed() - stakedEnergy) * energyPrice;
     execution.originEnergyUsage = 0L;
+    execution.faultPc = result.getException() == null && !result.isRevert() ? -1 : program.getPC();
+    execution.faultOp = result.getException() == null && !result.isRevert()
+        ? "" : String.format("%02x", program.getCurrentOpIntValue());
     execution.storageWrites = failed(result)
         ? Collections.emptyMap() : repository.netStorageWrites();
     execution.logs = failed(result) ? Collections.emptyList() : logs(result.getLogInfoList());

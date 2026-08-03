@@ -122,6 +122,8 @@ func Execute(w World, tx Tx) (Execution, error) {
 		EnergyUsed:        bill.EnergyUsageTotal,
 		EnergyFee:         bill.EnergyFee,
 		OriginEnergyUsage: bill.OriginEnergyUsage,
+		FaultPC:           res.FaultPC,
+		FaultOp:           faultOp(res.FaultOp, res.Err),
 		StorageWrites:     sdb.netWrites(inputStorage),
 		Logs:              nil,
 	}
@@ -132,6 +134,13 @@ func Execute(w World, tx Tx) (Execution, error) {
 		}
 	}
 	return out, nil
+}
+
+func faultOp(op byte, err error) string {
+	if err == nil {
+		return ""
+	}
+	return fmt.Sprintf("%02x", op)
 }
 
 // ownerStakedEnergy derives the caller's available staked energy from the World. Recovery

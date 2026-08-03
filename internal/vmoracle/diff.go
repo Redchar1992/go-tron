@@ -23,6 +23,8 @@ func Diff(a, b Execution) []Divergence {
 	add("energyFee", itoa(a.EnergyFee), itoa(b.EnergyFee))
 	add("originEnergyUsage", itoa(a.OriginEnergyUsage), itoa(b.OriginEnergyUsage))
 	add("createdAddress", a.CreatedAddress, b.CreatedAddress)
+	add("faultPc", itoa(int64(a.FaultPC)), itoa(int64(b.FaultPC)))
+	add("faultOp", a.FaultOp, b.FaultOp)
 
 	diffStorage(&d, a.StorageWrites, b.StorageWrites)
 	diffLogs(&d, a.Logs, b.Logs)

@@ -63,6 +63,8 @@ final class OracleTypes {
     long energyUsed;
     long energyFee;
     long originEnergyUsage;
+    int faultPc;
+    String faultOp;
     Map<String, Map<String, String>> storageWrites;
     List<LogEntry> logs;
     String createdAddress;

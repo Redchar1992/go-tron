@@ -1,0 +1,47 @@
+{
+  "world": {
+    "version": 23,
+    "dynamicProps": {
+      "totalEnergyWeight": 28,
+      "totalEnergyCurrentLimit": 1000000000,
+      "supportUnfreezeDelay": false,
+      "allowNewReward": false,
+      "energyFee": 100
+    },
+    "block": {
+      "number": 5000000,
+      "timestamp": 1600000000000,
+      "witness": "41c000000000000000000000000000000000000009"
+    },
+    "accounts": {
+      "41c000000000000000000000000000000000000001": {
+        "balance": 1000000000,
+        "code": "",
+        "storage": null,
+        "energyStake": 8000000
+      },
+      "41c000000000000000000000000000000000000002": {
+        "balance": 0,
+        "code": "6000600060006000600073c00000000000000000000000000000000000000362fffffff15015602901585160448053900a5a5560600a609902018060d0608e02a2607360c560b26058199000",
+        "storage": null,
+        "energyStake": 0
+      },
+      "41c000000000000000000000000000000000000003": {
+        "balance": 0,
+        "code": "205260c7197f7cac85d99bcf337f929b5df39c65516c0e3f436a80df6cd26879e62bb0d57852a10355600a60d3546032105860865a9001faf1607b9151fa60fd501960c6f1603aa29160b8045358069190530aa27f60a9c8f2d1bc7be5880f981ec88ac0d43ef36985e31577e88f6fc64f23ff825360b36002105b60c0065060206000f3",
+        "storage": null,
+        "energyStake": 0
+      }
+    }
+  },
+  "tx": {
+    "type": "TriggerSmartContract",
+    "owner": "41c000000000000000000000000000000000000001",
+    "contract": "41c000000000000000000000000000000000000002",
+    "data": "",
+    "bytecode": "",
+    "callValue": 0,
+    "feeLimit": 1000000000,
+    "txID": ""
+  }
+}

@@ -95,23 +95,23 @@ func (in *interpreter) runFrame(sc *scope) *Result {
 		o := in.table[op]
 		if o == nil || (o.enabled != nil && !o.enabled(in.cfg)) {
 			// Unknown opcode, or one whose introducing hardfork is not active yet.
-			return in.fail(ErrInvalidOpcode)
+			return in.fail(sc, ErrInvalidOpcode)
 		}
 		if sc.stack.Len() < o.pop {
-			return in.fail(ErrStackUnderflow)
+			return in.fail(sc, ErrStackUnderflow)
 		}
 		if sc.stack.Len()-o.pop+o.push > MaxStack {
-			return in.fail(ErrStackOverflow)
+			return in.fail(sc, ErrStackOverflow)
 		}
 		cost, err := o.gas(in, sc)
 		if err != nil {
-			return in.fail(err)
+			return in.fail(sc, err)
 		}
 		if err := in.meter.spend(cost); err != nil {
-			return in.fail(err)
+			return in.fail(sc, err)
 		}
 		if err := o.exec(in, sc); err != nil {
-			return in.fail(err)
+			return in.fail(sc, err)
 		}
 		if !o.jumps && !o.halts {
 			sc.pc++
@@ -119,12 +119,17 @@ func (in *interpreter) runFrame(sc *scope) *Result {
 	}
 	// Normal end (STOP / RETURN / REVERT / running off the code end). REVERT does not
 	// burn the remaining energy; it is reported via Reverted.
-	return &Result{Return: sc.ret, Reverted: sc.reverted, EnergyUsed: in.meter.used}
+	return &Result{Return: sc.ret, Reverted: sc.reverted, EnergyUsed: in.meter.used, FaultPC: -1}
 }
 
 // fail builds a Result for a VM exception: all energy is consumed.
-func (in *interpreter) fail(err error) *Result {
-	return &Result{EnergyUsed: in.meter.limit, Err: err}
+func (in *interpreter) fail(sc *scope, err error) *Result {
+	return &Result{
+		EnergyUsed: in.meter.limit,
+		Err:        err,
+		FaultPC:    sc.pc,
+		FaultOp:    byte(sc.contract.Code[sc.pc]),
+	}
 }
 
 // ---- energy / memory cost helpers ----

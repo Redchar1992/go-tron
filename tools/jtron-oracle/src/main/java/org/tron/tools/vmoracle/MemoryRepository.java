@@ -157,7 +157,9 @@ final class MemoryRepository implements InvocationHandler {
       SmartContract smartContract = SmartContract.newBuilder()
           .setContractAddress(ByteString.copyFrom(address))
           .setOriginAddress(ByteString.copyFrom(address))
-          .setVersion(0)
+          // VMActuator writes version=1 for every deployed contract. Synthetic worlds model
+          // deployed runtime code, so this is required for CompatibleEvm's 63/64 call rule.
+          .setVersion(1)
           .build();
       contracts.put(addressHex, new ContractCapsule(smartContract));
     }

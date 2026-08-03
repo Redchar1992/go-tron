@@ -88,6 +88,8 @@ type Result struct {
 	Reverted   bool   // true if the frame ended in REVERT
 	EnergyUsed uint64 // energy consumed (== limit on a VM exception)
 	Err        error  // non-nil on a VM exception (out-of-energy, bad jump, stack, invalid op)
+	FaultPC    int    // program counter at the fault, or -1 for a successful execution
+	FaultOp    byte   // opcode at FaultPC, or zero when no opcode fault was observed
 }
 
 // addrWord right-aligns a 20-byte address into a 256-bit word (the TVM DataWord form).

@@ -8,9 +8,9 @@ import (
 
 // The fuzz-case generator (M3.5e plan §3). It turns a fuzzer seed into a fully-specified
 // (World, Tx) deterministically, so the same seed always reproduces the same case — a
-// prerequisite for shrinking and for a stable corpus. Until the java-tron oracle exists the
-// generated cases drive go-vs-go invariants (determinism, no-panic); once it does, the SAME
-// GenCase feeds both VMs (§3.2 world-synthesis).
+// prerequisite for shrinking and for a stable corpus. The same GenCase now feeds both VMs in
+// the gated cross-VM corpus test (§3.2 world-synthesis), while the fast default fuzz target
+// keeps checking Go-only determinism and no-panic invariants.
 
 // genAddr builds a 21-byte 0x41 TRON address ending in b, as lowercase hex. The 0xC0 second
 // byte keeps generated addresses clear of the low precompile addresses (0x01..0x0a).
