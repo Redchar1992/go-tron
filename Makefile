@@ -3,7 +3,7 @@ COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 PKG     := github.com/Redchar1992/go-tron/internal/version
 LDFLAGS := -X $(PKG).Version=$(VERSION) -X $(PKG).GitCommit=$(COMMIT)
 
-.PHONY: build run test vet fmt fmtcheck tidy clean
+.PHONY: build run test vet fmt fmtcheck tidy clean oracle-ping
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/gotron ./cmd/gotron
@@ -28,3 +28,6 @@ tidy:
 
 clean:
 	rm -rf bin
+
+oracle-ping:
+	@printf '%s\n' '{"method":"ping"}' | tools/jtron-oracle/run.sh

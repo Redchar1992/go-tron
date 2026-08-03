@@ -1,0 +1,22 @@
+gradle.afterProject { project ->
+    if (project.path == ':framework') {
+        def oracleRoot = new File(project.rootProject.projectDir.parentFile, 'go-tron/tools/jtron-oracle')
+        project.sourceSets.main.java.srcDir(new File(oracleRoot, 'src/main/java'))
+
+        project.tasks.register('writeJtronOracleClasspath') {
+            dependsOn project.tasks.named('classes')
+            doLast {
+                def output = project.providers.gradleProperty('oracleClasspathFile').get()
+                def moduleOutputs = project.rootProject.subprojects.collectMany { candidate ->
+                    if (!candidate.plugins.hasPlugin('java')) {
+                        return []
+                    }
+                    return candidate.sourceSets.main.output.classesDirs.files +
+                        [candidate.sourceSets.main.output.resourcesDir]
+                }
+                project.file(output).text = (moduleOutputs +
+                    project.sourceSets.main.runtimeClasspath.files).collect { it.absolutePath }.join(File.pathSeparator)
+            }
+        }
+    }
+}

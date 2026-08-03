@@ -12,6 +12,7 @@ docs/
 /bin/
 /build/
 /dist/
+.cache/
 vendor/
 go.work
 go.work.sum

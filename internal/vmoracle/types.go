@@ -10,6 +10,14 @@
 // makes Diff a string comparison.
 package vmoracle
 
+// Request is one NDJSON request accepted by the persistent jtron-oracle process.
+// Method is reserved for control requests such as "ping"; execution requests set World and Tx.
+type Request struct {
+	Method string `json:"method,omitempty"`
+	World  *World `json:"world,omitempty"`
+	Tx     *Tx    `json:"tx,omitempty"`
+}
+
 // World is the fully-specified pre-state + config one execution runs against — the go-tron
 // counterpart of a jtron-oracle request. Both VMs execute an identical World, so the fuzzer
 // authors the world (incl. staked-energy globals) and sidesteps the historical-state oracle.
