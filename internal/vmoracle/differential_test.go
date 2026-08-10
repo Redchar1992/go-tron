@@ -17,7 +17,9 @@ func TestJavaOracleCorpus(t *testing.T) {
 	if os.Getenv("JTRON_ORACLE_INTEGRATION") != "1" {
 		t.Skip("set JTRON_ORACLE_INTEGRATION=1 to run cross-VM corpus")
 	}
-	count := envInt("JTRON_ORACLE_CORPUS", 32)
+	// Keep the default large enough to cover the generator's opcode families while allowing CI
+	// callers to trade runtime for breadth explicitly (for example, JTRON_ORACLE_CORPUS=512).
+	count := envInt("JTRON_ORACLE_CORPUS", 64)
 	if count < 1 {
 		t.Skip("JTRON_ORACLE_CORPUS is less than one")
 	}

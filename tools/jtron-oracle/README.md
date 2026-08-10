@@ -43,6 +43,22 @@ The launcher builds only the required java-tron classes, writes a cached runtime
 and then replaces itself with the persistent oracle JVM. Gradle output is sent to stderr so
 stdout remains valid NDJSON.
 
+## Mainnet runtime corpus
+
+`test/differential/testdata/mainnet_contracts.json` is an offline snapshot captured from
+TronGrid's `wallet/getcontractinfo` endpoint. It contains deployed runtime bytecode, the raw
+ABI, and deterministic ABI calldata for USDT plus the USDC implementation/proxy pair. Validate
+the fixture without a JVM, or run every vector through both VMs, with:
+
+```bash
+go test -run TestMainnetContractCorpusFixture ./internal/vmoracle
+make oracle-mainnet
+```
+
+Refresh the snapshot (including provenance timestamp, runtime code hash, ABI, and calldata) with
+`make capture-mainnet-corpus`. The checked-in fixture keeps the differential suite offline and
+reproducible; network access is needed only for an intentional refresh.
+
 ## Determinism contract and v0 boundary
 
 - java-tron is pinned to `GreatVoyage-v4.8.1.1`.
