@@ -276,17 +276,18 @@ func (m *Manager) PushBlock(b *core.Block) error {
 	// New head. Either it extends the currently-applied tip (linear) or it overtook a
 	// different branch (fork switch).
 	if bytes.Equal(node.ParentID, oldHead.ID) {
-		return m.applyOnTop(node)
+		return m.applyOnTop(node, oldHead)
 	}
 	return m.switchFork(node, oldHead)
 }
 
 // applyOnTop opens a session and applies the block on top of the current state. On
 // failure the session is revoked so committed state is untouched.
-func (m *Manager) applyOnTop(node *khaos.KBlock) error {
+func (m *Manager) applyOnTop(node, oldHead *khaos.KBlock) error {
 	m.db.BuildSession()
 	if err := m.processBlock(node.Block); err != nil {
 		m.db.Revoke()
+		m.khaos.RejectTip(node.ID, oldHead)
 		return err
 	}
 	m.applied = append(m.applied, appliedRef{id: node.ID, num: node.Num})
@@ -314,6 +315,10 @@ func (m *Manager) processBlock(b *core.Block) error {
 		res, err := actuator.Apply(m.state, tx, blk)
 		if err != nil {
 			return fmt.Errorf("manager: block %d tx %d: %w", block.Number(b), i, err)
+		}
+		if res.Unhandled > 0 && !m.lenient {
+			return fmt.Errorf("manager: block %d tx %d contains %d unsupported contract(s)",
+				block.Number(b), i, res.Unhandled)
 		}
 		receipts = append(receipts, res.Receipts...)
 	}
@@ -452,6 +457,7 @@ func (m *Manager) switchFork(newHead, oldHead *khaos.KBlock) error {
 		if err := m.processBlock(node.Block); err != nil {
 			m.db.Revoke()
 			m.restoreBranch(oldBr) // best-effort rollback to the prior head
+			m.khaos.RejectTip(newHead.ID, oldHead)
 			return fmt.Errorf("manager: switchFork apply %x: %w", node.ID, err)
 		}
 		m.applied = append(m.applied, appliedRef{id: node.ID, num: node.Num})

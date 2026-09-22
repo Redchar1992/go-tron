@@ -31,6 +31,19 @@ func transfer(t *testing.T, from, to []byte, amount int64) *core.Transaction {
 	}}
 }
 
+func unsupportedProposalCreate(t *testing.T, owner []byte) *core.Transaction {
+	t.Helper()
+	p, err := anypb.New(&core.ProposalCreateContract{OwnerAddress: owner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &core.Transaction{RawData: &core.TransactionRaw{
+		Contract: []*core.Transaction_Contract{{
+			Type: core.Transaction_Contract_ProposalCreateContract, Parameter: p,
+		}},
+	}}
+}
+
 // mkBlock builds a block with a correct txTrieRoot in its header (so validateBlock passes).
 func mkBlock(t *testing.T, num int64, parent []byte, ts int64, txs ...*core.Transaction) *core.Block {
 	t.Helper()
@@ -91,6 +104,32 @@ func TestLinearReplayAppliesState(t *testing.T) {
 	}
 	if m.Head().Num != 1 {
 		t.Fatalf("head num = %d, want 1", m.Head().Num)
+	}
+}
+
+func TestStrictManagerRejectsUnsupportedContract(t *testing.T) {
+	m, gid := newManagerWithA(t)
+	b := mkBlock(t, 1, gid, 1000, unsupportedProposalCreate(t, addrA))
+	if err := m.PushBlock(b); err == nil {
+		t.Fatal("strict manager accepted an unsupported contract")
+	}
+	if m.Head().Num != 0 {
+		t.Fatalf("failed block changed head to %d", m.Head().Num)
+	}
+	if got := m.db.Depth(); got != 0 {
+		t.Fatalf("failed block left %d revoking sessions", got)
+	}
+}
+
+func TestReplayManagerAllowsUnsupportedContract(t *testing.T) {
+	m, gid := newManagerWithA(t)
+	m.EnableReplayProvisioning()
+	b := mkBlock(t, 1, gid, 1000, unsupportedProposalCreate(t, addrA))
+	if err := m.PushBlock(b); err != nil {
+		t.Fatalf("lenient replay rejected unsupported contract: %v", err)
+	}
+	if m.Head().Num != 1 {
+		t.Fatalf("lenient replay head = %d, want 1", m.Head().Num)
 	}
 }
 

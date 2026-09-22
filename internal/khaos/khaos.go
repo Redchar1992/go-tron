@@ -13,6 +13,7 @@
 package khaos
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 
@@ -102,6 +103,22 @@ func (k *KhaosDB) Push(b *core.Block) (*KBlock, error) {
 
 // Head returns the current chain tip.
 func (k *KhaosDB) Head() *KBlock { return k.head }
+
+// RejectTip removes a newly inserted tip after block execution failed and restores the
+// previous canonical head. The block was inserted before execution so fork selection can
+// resolve its parent; consensus-invalid execution must not leave that un-applied tip as
+// the reported head. Any other retained branch nodes remain available as side-branch data.
+func (k *KhaosDB) RejectTip(id []byte, previous *KBlock) bool {
+	if k.head == nil || !bytes.Equal(k.head.ID, id) {
+		return false
+	}
+	if previous != nil && k.Get(previous.ID) == nil {
+		return false
+	}
+	delete(k.blocks, key(id))
+	k.head = previous
+	return true
+}
 
 // Get returns the node for id, or nil.
 func (k *KhaosDB) Get(id []byte) *KBlock { return k.blocks[key(id)] }
