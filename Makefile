@@ -3,7 +3,7 @@ COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 PKG     := github.com/Redchar1992/go-tron/internal/version
 LDFLAGS := -X $(PKG).Version=$(VERSION) -X $(PKG).GitCommit=$(COMMIT)
 
-.PHONY: build run test vet fmt fmtcheck tidy clean oracle-ping oracle-corpus oracle-mainnet capture-mainnet-corpus
+.PHONY: build run test vet fmt fmtcheck tidy clean oracle-ping oracle-corpus oracle-mainnet oracle-mainnet-live capture-mainnet-corpus capture-mainnet-live
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/gotron ./cmd/gotron
@@ -38,5 +38,11 @@ oracle-corpus:
 oracle-mainnet:
 	@JTRON_ORACLE_INTEGRATION=1 go test -run 'TestJavaOracleMainnetContractCorpus' -count=1 ./internal/vmoracle
 
+oracle-mainnet-live:
+	@JTRON_ORACLE_INTEGRATION=1 go test -run 'TestJavaOracleMainnetLiveFixture' -count=1 ./internal/vmoracle
+
 capture-mainnet-corpus:
 	@python3 test/differential/capture_contract_corpus.py
+
+capture-mainnet-live:
+	@python3 test/differential/capture_mainnet_live_calls.py

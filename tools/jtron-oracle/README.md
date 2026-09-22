@@ -59,6 +59,19 @@ Refresh the snapshot (including provenance timestamp, runtime code hash, ABI, an
 `make capture-mainnet-corpus`. The checked-in fixture keeps the differential suite offline and
 reproducible; network access is needed only for an intentional refresh.
 
+The first live-state vertical slice is `test/differential/testdata/mainnet_live_usdt.json`.
+`make capture-mainnet-live` reads the latest USDT runtime/storage words and `eth_call` results
+from TronGrid, while the offline replay is checked by:
+
+```bash
+go test -run TestMainnetLiveUSDTFixture ./internal/vmoracle
+make oracle-mainnet-live
+```
+
+The live fixture is explicitly tagged with the captured block number/hash. TronGrid's public
+`eth_getStorageAt` currently supports `latest`, so historical N-block sign-off still requires an
+archive node or a local java-tron state snapshot.
+
 ## Determinism contract and v0 boundary
 
 - java-tron is pinned to `GreatVoyage-v4.8.1.1`.
