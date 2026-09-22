@@ -2,17 +2,18 @@
 // java-tron's ApplicationImpl + Manager wiring. It owns subsystem lifecycle
 // (start in dependency order, stop in reverse).
 //
-// M0: lifecycle skeleton only. Subsystems (p2p, api) are stubs; the consensus
-// core (state, db, actuator, tvm, consensus, the Manager state machine) is not
-// wired yet — that arrives across M1–M4.
+// The node opens a committed KV engine and constructs the Manager before external services
+// start. P2P/API/consensus remain separate milestones; bootstrap and sync will own block flow.
 package node
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/Redchar1992/go-tron/internal/api"
 	"github.com/Redchar1992/go-tron/internal/config"
+	"github.com/Redchar1992/go-tron/internal/db"
 	"github.com/Redchar1992/go-tron/internal/p2p"
 )
 
@@ -39,6 +40,10 @@ type Node struct {
 
 	p2p *p2p.Service
 	api *api.Server
+
+	committed db.KV
+	database  *db.Database
+	manager   *Manager
 }
 
 // New constructs a Node from config and options.
@@ -57,10 +62,25 @@ func (n *Node) Start(ctx context.Context) error {
 	n.log.Info("node: starting", "mode", n.opts.Mode, "p2pDisabled", n.opts.P2PDisabled,
 		"storage", n.cfg.Storage.Engine)
 
-	// TODO(M1–M4): open db -> state -> actuator/tvm -> consensus -> Manager before networking.
+	if n.committed != nil {
+		return fmt.Errorf("node: already started")
+	}
+	committed, err := db.Open(n.cfg.Storage.Dir, n.cfg.Storage.Engine)
+	if err != nil {
+		return fmt.Errorf("node: open storage: %w", err)
+	}
+	n.committed = committed
+	n.database = db.NewDatabase(committed)
+	n.manager = NewManager(n.database, 0)
+	n.log.Info("node: storage and manager ready", "engine", n.cfg.Storage.Engine,
+		"dir", n.cfg.Storage.Dir)
 
 	if !n.opts.P2PDisabled && n.opts.Mode != ModeSolidity {
 		if err := n.p2p.Start(ctx); err != nil {
+			_ = n.committed.Close()
+			n.committed = nil
+			n.database = nil
+			n.manager = nil
 			return err
 		}
 	} else {
@@ -68,10 +88,14 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 
 	if err := n.api.Start(ctx); err != nil {
+		_ = n.committed.Close()
+		n.committed = nil
+		n.database = nil
+		n.manager = nil
 		return err
 	}
 
-	n.log.Info("node: started (M0 scaffold — no chain processing yet)")
+	n.log.Info("node: started (P2P/API/consensus services remain under construction)")
 	return nil
 }
 
@@ -84,6 +108,17 @@ func (n *Node) Stop() error {
 	if err := n.p2p.Stop(); err != nil {
 		n.log.Error("p2p stop", "err", err)
 	}
+	if n.committed != nil {
+		if err := n.committed.Close(); err != nil {
+			n.log.Error("storage close", "err", err)
+		}
+		n.committed = nil
+		n.database = nil
+		n.manager = nil
+	}
 	n.log.Info("node: stopped")
 	return nil
 }
+
+// Manager returns the chain manager constructed during Start, or nil before Start.
+func (n *Node) Manager() *Manager { return n.manager }

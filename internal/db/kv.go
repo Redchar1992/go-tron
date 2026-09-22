@@ -11,6 +11,9 @@ import (
 // ErrNotFound is returned by Get when a key is absent.
 var ErrNotFound = errors.New("db: key not found")
 
+// ErrClosed means an operation was attempted after the committed engine shut down.
+var ErrClosed = errors.New("db: store closed")
+
 // KVPair is one key/value entry returned by a prefix scan.
 type KVPair struct {
 	Key   []byte

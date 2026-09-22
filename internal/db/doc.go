@@ -4,9 +4,11 @@
 //
 // Files:
 //   - kv.go        KV interface + MemKV (in-memory) implementation
+//   - pebble.go    durable Pebble implementation + engine selector
 //   - snapshot.go  Database: a stack of revoking sessions over a base KV
 //
-// Default committed engine will be Pebble (pure Go, no cgo); LevelDB/RocksDB selectable
-// for parity testing. CONSENSUS-CRITICAL: snapshot/rollback semantics drive fork
-// switching, and the eventual state-root derivation sits on top of this. Milestone: M1.
+// Pebble is the durable default (pure Go, no cgo); MemKV remains available for tests and
+// offline replay. CONSENSUS-CRITICAL: snapshot/rollback semantics drive fork switching, and
+// the eventual state-root derivation sits on top of this. LevelDB/RocksDB adapters are not
+// registered until their compatibility semantics are specified.
 package db
