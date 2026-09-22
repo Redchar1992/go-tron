@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/Redchar1992/go-tron/internal/genesis"
 )
 
 // Net is the P2P networking config.
@@ -35,6 +37,10 @@ type Config struct {
 	GRPC    Endpoint `json:"grpc"`
 	JSONRPC Endpoint `json:"jsonrpc"`
 	Storage Storage  `json:"storage"`
+	// Genesis is optional for now: a node with no configured genesis opens its
+	// database and waits for a future sync/bootstrap path. When present, Node.Start
+	// initializes a fresh database from it and persists the canonical root block.
+	Genesis *genesis.Config `json:"genesis,omitempty"`
 }
 
 // Default returns configuration matching java-tron mainnet defaults.

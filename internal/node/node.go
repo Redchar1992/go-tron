@@ -74,6 +74,13 @@ func (n *Node) Start(ctx context.Context) error {
 	n.manager = NewManager(n.database, 0)
 	n.log.Info("node: storage and manager ready", "engine", n.cfg.Storage.Engine,
 		"dir", n.cfg.Storage.Dir)
+	if err := n.bootstrapChain(); err != nil {
+		_ = n.committed.Close()
+		n.committed = nil
+		n.database = nil
+		n.manager = nil
+		return err
+	}
 
 	if !n.opts.P2PDisabled && n.opts.Mode != ModeSolidity {
 		if err := n.p2p.Start(ctx); err != nil {
